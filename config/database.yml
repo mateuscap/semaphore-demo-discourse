@@ -25,10 +25,9 @@ development:
   if !test_db.present?
     test_db = "discourse_test"
 
-    if num = ENV["TEST_ENV_NUMBER"]
+      num = ENV["TEST_ENV_NUMBER"]
       num = num.presence || "1"
       test_db += "_#{num}"
-    end
   end
 %>
 
