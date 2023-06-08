@@ -1,6 +1,18 @@
 # frozen_string_literal: true
 
-
+if ENV["COVERAGE"]
+  require "simplecov"
+  if ENV["TEST_ENV_NUMBER"]
+    SimpleCov.command_name "#{SimpleCov.command_name} #{ENV["TEST_ENV_NUMBER"]}"
+  end
+  SimpleCov.start "rails" do
+    add_group "Libraries", %r{^/lib/(?!tasks).*$}
+    add_group "Scripts", "script"
+    add_group "Serializers", "app/serializers"
+    add_group "Services", "app/services"
+    add_group "Tasks", "lib/tasks"
+  end
+end
 
 require "rubygems"
 require "rbtrace" if RUBY_ENGINE == "ruby"
