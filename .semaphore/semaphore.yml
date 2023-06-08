@@ -57,7 +57,7 @@ blocks:
             - bundle exec rake db:create 
             - bundle exec rake db:migrate   
             # bundle exec rake parallel:setup
-            - bin/turbo_rspec -rdebug
+            - bin/turbo_rspec
             # bundle exec turbo_tests
         - name: Plugins Frontend
           commands:
