@@ -49,7 +49,7 @@ blocks:
         - name: Core Backend
           commands:
             - bundle exec rake db:create db:migrate
-            - #bundle exec rake db:migrate
+            #bundle exec rake db:migrate
             - bin/turbo_rspec
         - name: Plugins Frontend
           commands:
