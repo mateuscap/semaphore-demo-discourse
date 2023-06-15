@@ -48,8 +48,9 @@ blocks:
       jobs:
         - name: Core Backend
           commands:
-            - 'bundle exec rake db:create db:migrate'
+            - '# bundle exec rake db:create db:migrate'
             - '# bundle exec rake db:migrate'
+            - 'bin/rails db:create db:migrate'
             - bin/turbo_rspec
         - name: Plugins Frontend
           commands:
