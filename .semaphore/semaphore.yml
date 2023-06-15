@@ -13,21 +13,17 @@ global_job_config:
       - checkout
       - cache restore
       - sem-version ruby 3.2.2
-      # bash script/install-rails.sh
       - sem-service start postgres 13
-      - curl -fsSL https://packages.redis.io/gpg | sudo gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
-      - echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/redis.list
+      - 'curl -fsSL https://packages.redis.io/gpg | sudo gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg'
+      - 'echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/redis.list'
       - sudo apt-get update
       - sudo apt-get -y install redis
       - sudo -u postgres psql -c "CREATE ROLE $PGUSER LOGIN SUPERUSER PASSWORD '$PGPASSWORD';"
-      # 'gem install bundler --conservative -v $(awk ''/BUNDLED WITH/ { getline; gsub(/ /,""); print $0 }'' Gemfile.lock)'
       - bundle config --local path vendor/bundle
-      # bundle config --local deployment true
-      # bundle config --local without development
-      - bundle install #--jobs 4
+      - bundle install
       - bundle clean
       - yarn install
-      - cache store    
+      - cache store
   env_vars:
     - name: DISCOURSE_HOSTNAME
       value: www.example.com
@@ -43,10 +39,8 @@ global_job_config:
       value: '4'
     - name: PGDATA
       value: /tmp/test_data/pg
-    # name: USES_PARALLEL_DATABASES
-    # value: "true"
     - name: SPEC_OPTS
-      value: "--format documentation"
+      value: '--format documentation'
 blocks:
   - name: Tests
     dependencies: []
@@ -54,16 +48,14 @@ blocks:
       jobs:
         - name: Core Backend
           commands:
-            - bundle exec rake db:create 
-            - bundle exec rake db:migrate   
-            # bundle exec rake parallel:setup
+            - 'bundle exec rake db:create db:migrate'
+            - '# bundle exec rake db:migrate'
             - bin/turbo_rspec
-            # bundle exec turbo_tests
         - name: Plugins Frontend
           commands:
-            - bundle exec rake db:create 
-            - bundle exec rake db:migrate              
-            - QUNIT_PARALLEL=3 bin/rake plugin:qunit['*','1200000']
+            - 'bundle exec rake db:create db:migrate'
+            - '# bundle exec rake db:migrate'
+            - 'QUNIT_PARALLEL=3 bin/rake plugin:qunit[''*'',''1200000'']'
         - name: Core Frontend (Chrome)
           commands:
             - export TESTEM_BROWSER=Chrome && export TESTEM_FIREFOX_PATH=false
@@ -73,9 +65,8 @@ blocks:
             - yarn ember exam --path /tmp/emberbuild --load-balance --parallel=5  --launch "Chrome" --write-execution-file --random
             - cache restore
         - name: Core Frontend (Firefox ESR)
-          commands: 
-            # sem-version firefox 102
-            - wget https://ftp.mozilla.org/pub/firefox/releases/102.12.0esr/linux-x86_64/en-GB/firefox-102.12.0esr.tar.bz2
+          commands:
+            - 'wget https://ftp.mozilla.org/pub/firefox/releases/102.12.0esr/linux-x86_64/en-GB/firefox-102.12.0esr.tar.bz2'
             - tar xf firefox-102.12.0esr.tar.bz2
             - sudo rm /usr/bin/firefox
             - sudo mv firefox/ /usr/lib/firefox
@@ -90,8 +81,7 @@ blocks:
             - cache restore
         - name: Core Frontend (Firefox Evergreen)
           commands:
-            # sem-version firefox 102
-            - wget https://ftp.mozilla.org/pub/firefox/releases/102.12.0esr/linux-x86_64/en-GB/firefox-102.12.0esr.tar.bz2
+            - 'wget https://ftp.mozilla.org/pub/firefox/releases/102.12.0esr/linux-x86_64/en-GB/firefox-102.12.0esr.tar.bz2'
             - tar xf firefox-102.12.0esr.tar.bz2
             - sudo rm /usr/bin/firefox
             - sudo mv firefox/ /usr/lib/firefox
@@ -102,34 +92,26 @@ blocks:
             - mkdir /tmp/emberbuild
             - cd ./app/assets/javascripts/discourse
             - yarn ember build --environment=test  -o /tmp/emberbuild
-            - yarn ember exam --path /tmp/emberbuild --load-balance --parallel=5  --launch "Firefox" --write-execution-file --random  
+            - yarn ember exam --path /tmp/emberbuild --load-balance --parallel=5  --launch "Firefox" --write-execution-file --random
             - cache restore
         - name: Core System
-          commands: 
-            - bundle exec rake db:create 
-            - bundle exec rake db:migrate  
+          commands:
+            - 'bundle exec rake db:create db:migrate'
+            - '# bundle exec rake db:migrate'
             - yarn add ember-cli
             - bin/ember-cli --build
-            - bin/rails runner "require 'webdrivers'; Webdrivers::Chromedriver.update"
+            - 'bin/rails runner "require ''webdrivers''; Webdrivers::Chromedriver.update"'
             - bin/rspec spec/system
         - name: Core Annotations
           commands:
-            - bundle exec rake db:create 
-            - bundle exec rake db:migrate           
-            - bin/rake annotate:ensure_all_indexes
+            - 'bundle exec rake db:create db:migrate'
+            - '# bundle exec rake db:migrate'
+            - 'bin/rake annotate:ensure_all_indexes'
             - bin/annotate --models --model-dir app/models
-            - >-
-              if [ ! -z "$(git status --porcelain app/models/)" ]; 
-              then echo "Core annotations are not up to date. To resolve, run:";
-              echo "  bin/rake annotate:clean";
-              echo " ";
-              echo "Or manually apply the diff printed below:"
-              echo "---------------------------------------------";
-              git -c color.ui=always diff app/models/;
-              fi;
+            - 'if [ ! -z "$(git status --porcelain app/models/)" ];  then echo "Core annotations are not up to date. To resolve, run:"; echo "  bin/rake annotate:clean"; echo " "; echo "Or manually apply the diff printed below:" echo "---------------------------------------------"; git -c color.ui=always diff app/models/; fi;'
   - name: Linting
     dependencies: []
-    task: 
+    task:
       jobs:
         - name: ESLint
           commands:
@@ -138,7 +120,7 @@ blocks:
             - yarn eslint app/assets/javascripts
             - yarn eslint plugins
             - yarn prettier -v
-            - | 
+            - |
               yarn pprettier --list-different \
               "app/assets/stylesheets/**/*.scss" \
               "app/assets/javascripts/**/*.js" \
@@ -147,9 +129,8 @@ blocks:
               "plugins/**/assets/javascripts/**/*.js" \
               "plugins/**/assets/javascripts/**/*.hbs" \
             - yarn ember-template-lint --no-error-on-unmatched-pattern "app/assets/javascripts/**/*.hbs" "plugins/**/assets/javascripts/**/*.hbs"
-            - bundle exec ruby script/i18n_lint.rb "config/**/locales/{client,server}.en.yml"
-            - bundle exec ruby script/i18n_lint.rb "plugins/**/locales/{client,server}.en.yml"
-
+            - 'bundle exec ruby script/i18n_lint.rb "config/**/locales/{client,server}.en.yml"'
+            - 'bundle exec ruby script/i18n_lint.rb "plugins/**/locales/{client,server}.en.yml"'
   - name: Licenses
     dependencies: []
     task:
