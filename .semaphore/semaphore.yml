@@ -2,7 +2,7 @@ version: v1.0
 name: Initial Pipeline
 agent:
   machine:
-    type: e1-standard-8
+    type: f1-standard-2
     os_image: ubuntu2004
 auto_cancel:
   running:
@@ -48,9 +48,8 @@ blocks:
       jobs:
         - name: Core Backend
           commands:
-            - '# bundle exec rake db:create db:migrate'
-            - '# bundle exec rake db:migrate'
-            - 'bin/rails db:create db:migrate'
+            - bundle exec rake db:create db:migrate
+            - #bundle exec rake db:migrate
             - bin/turbo_rspec
         - name: Plugins Frontend
           commands:
