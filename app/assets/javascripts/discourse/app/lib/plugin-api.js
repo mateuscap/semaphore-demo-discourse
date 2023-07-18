@@ -68,7 +68,6 @@ import {
 import { addTagsHtmlCallback } from "discourse/lib/render-tags";
 import { addToolbarCallback } from "discourse/components/d-editor";
 import { addTopicParticipantClassesCallback } from "discourse/widgets/topic-map";
-import { addTopicSummaryCallback } from "discourse/widgets/toggle-topic-summary";
 import { addTopicTitleDecorator } from "discourse/components/topic-title";
 import { addUserMenuProfileTabItem } from "discourse/components/user-menu/profile-tab-content";
 import { addUsernameSelectorDecorator } from "discourse/helpers/decorate-username-selector";
@@ -101,6 +100,7 @@ import {
   addSearchSuggestion,
   removeDefaultQuickSearchRandomTips,
 } from "discourse/widgets/search-menu-results";
+import { addSearchSuggestion as addGlimmerSearchSuggestion } from "discourse/components/search-menu/results/assistant";
 import { CUSTOM_USER_SEARCH_OPTIONS } from "select-kit/components/user-chooser";
 import { downloadCalendar } from "discourse/lib/download-calendar";
 import { consolePrefix } from "discourse/lib/source-identifier";
@@ -125,7 +125,7 @@ import { registerHashtagType } from "discourse/lib/hashtag-autocomplete";
 // based on Semantic Versioning 2.0.0. Please update the changelog at
 // docs/CHANGELOG-JAVASCRIPT-PLUGIN-API.md whenever you change the version
 // using the format described at https://keepachangelog.com/en/1.0.0/.
-export const PLUGIN_API_VERSION = "1.6.1";
+export const PLUGIN_API_VERSION = "1.7.0";
 
 // This helper prevents us from applying the same `modifyClass` over and over in test mode.
 function canModify(klass, type, resolverName, changes) {
@@ -1048,28 +1048,6 @@ class PluginApi {
   }
 
   /**
-   * EXPERIMENTAL. Do not use.
-   * Adds a callback to be topic summary widget markup that can be used, for example,
-   * to add an extra button to the topic summary widget.
-   *
-   * Example:
-   *
-   *  api.addTopicSummaryCallback((html, attrs, widget) => {
-   *    html.push(
-   *      widget.attach("button", {
-   *        className: "btn btn-primary",
-   *        icon: "magic",
-   *        title: "discourse_ai.ai_helper.title",
-   *        label: "discourse_ai.ai_helper.title",
-   *        action: "showAiSummary",
-   *     })
-   *   );
-   **/
-  addTopicSummaryCallback(callback) {
-    addTopicSummaryCallback(callback);
-  }
-
-  /**
    *
    * Adds a callback to be executed on the "transformed" post that is passed to the post
    * widget.
@@ -1690,6 +1668,7 @@ class PluginApi {
    */
   addSearchSuggestion(value) {
     addSearchSuggestion(value);
+    addGlimmerSearchSuggestion(value);
   }
 
   /**
@@ -1712,7 +1691,7 @@ class PluginApi {
   /**
    * Add a function to be called when there is a keyDown even on the search-menu widget.
    * This function runs before the default logic, and if one callback returns a falsey value
-   * the logic chain will stop, to prevent the core behavior from occuring.
+   * the logic chain will stop, to prevent the core behavior from occurring.
    *
    * Example usage:
    * ```
@@ -1834,7 +1813,6 @@ class PluginApi {
   }
 
   /**
-   * EXPERIMENTAL. Do not use.
    * Support for adding a navigation link to Sidebar Community section under the "More..." links drawer by returning a
    * class which extends from the BaseSectionLink class interface. See `lib/sidebar/user/community-section/base-section-link.js`
    * for documentation on the BaseSectionLink class interface.
@@ -1894,7 +1872,6 @@ class PluginApi {
   }
 
   /**
-   * EXPERIMENTAL. Do not use.
    * Registers a new countable for section links under Sidebar Categories section on top of the default countables of
    * unread topics count and new topics count.
    *
@@ -1963,7 +1940,6 @@ class PluginApi {
   }
 
   /**
-   * EXPERIMENTAL. Do not use.
    * Changes the lock icon used for a sidebar category section link to indicate that a category is read restricted.
    *
    * @param {String} Name of a FontAwesome 5 icon
@@ -1973,7 +1949,6 @@ class PluginApi {
   }
 
   /**
-   * EXPERIMENTAL. Do not use.
    * Register a custom prefix for a sidebar category section link.
    *
    * Example:
@@ -2012,7 +1987,6 @@ class PluginApi {
   }
 
   /**
-   * EXPERIMENTAL. Do not use.
    * Register a custom prefix for a sidebar tag section link.
    *
    * Example:
@@ -2044,7 +2018,6 @@ class PluginApi {
   }
 
   /**
-   * EXPERIMENTAL. Do not use.
    * Triggers a refresh of the counts for all category section links under the categories section for a logged in user.
    */
   refreshUserSidebarCategoriesSectionCounts() {
@@ -2056,7 +2029,6 @@ class PluginApi {
   }
 
   /**
-   * EXPERIMENTAL. Do not use.
    * Support for adding a Sidebar section by returning a class which extends from the BaseCustomSidebarSection
    * class interface. See `lib/sidebar/user/base-custom-sidebar-section.js` for documentation on the BaseCustomSidebarSection class
    * interface.
@@ -2180,7 +2152,6 @@ class PluginApi {
   }
 
   /**
-   * EXPERIMENTAL. Do not use.
    * Register a custom renderer for a notification type or override the
    * renderer of an existing type. See lib/notification-types/base.js for
    * documentation and the default renderer.
@@ -2244,7 +2215,6 @@ class PluginApi {
   }
 
   /**
-   * EXPERIMENTAL. Do not use.
    * Apply transformation using a callback on a list of model instances of a
    * specific type. Currently, this API only works on lists rendered in the
    * user menu such as notifications, bookmarks and topics (i.e. messages), but
@@ -2275,7 +2245,6 @@ class PluginApi {
   }
 
   /**
-   * EXPERIMENTAL. Do not use.
    * Adds a row to the dropdown used on the `userPrivateMessages` route used to navigate between the different user
    * messages pages.
    *
@@ -2300,7 +2269,7 @@ class PluginApi {
   }
 
   /**
-   * Registers a hastag type and its corresponding class.
+   * Registers a hashtag type and its corresponding class.
    * This is used when generating CSS classes in the hashtag-css-generator.
    *
    * @param {string} type - The type of the hashtag.
