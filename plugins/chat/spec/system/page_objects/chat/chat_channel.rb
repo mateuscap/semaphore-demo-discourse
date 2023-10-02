@@ -142,7 +142,6 @@ module PageObjects
         text = text.chomp if text.present? # having \n on the end of the string counts as an Enter keypress
         composer.fill_in(with: text)
         click_send_message
-        click_composer
         text
       end
 
@@ -191,27 +190,6 @@ module PageObjects
 
       def click_action_button(action_button_class)
         find(".chat-composer-dropdown__action-btn.#{action_button_class}").click
-      end
-
-      def has_message?(text: nil, id: nil)
-        check_message_presence(exists: true, text: text, id: id)
-      end
-
-      def has_no_message?(text: nil, id: nil)
-        check_message_presence(exists: false, text: text, id: id)
-      end
-
-      def check_message_presence(exists: true, text: nil, id: nil)
-        css_method = exists ? :has_css? : :has_no_css?
-        if text
-          find(".chat-channel").send(css_method, ".chat-message-text", text: text, wait: 5)
-        elsif id
-          find(".chat-channel").send(
-            css_method,
-            ".chat-message-container[data-id=\"#{id}\"]",
-            wait: 10,
-          )
-        end
       end
 
       def has_thread_indicator?(message)

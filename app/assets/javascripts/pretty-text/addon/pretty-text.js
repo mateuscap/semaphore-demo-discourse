@@ -28,7 +28,6 @@ export function buildOptions(state) {
     getTopicInfo,
     topicId,
     forceQuoteLink,
-    categoryHashtagLookup,
     userId,
     getCurrentUser,
     currentUser,
@@ -67,7 +66,6 @@ export function buildOptions(state) {
     getTopicInfo,
     topicId,
     forceQuoteLink,
-    categoryHashtagLookup,
     userId,
     getCurrentUser,
     currentUser,
@@ -125,6 +123,10 @@ export default class {
     let result;
     result = cookIt(raw, this.opts);
     return result ? result : "";
+  }
+
+  parse(markdown, env = {}) {
+    return this.opts.engine.parse(markdown, env);
   }
 
   sanitize(html) {

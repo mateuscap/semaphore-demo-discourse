@@ -1,6 +1,5 @@
 import Service, { inject as service } from "@ember/service";
 import ChatMessage from "discourse/plugins/chat/discourse/models/chat-message";
-import ChatMessageMentionWarning from "discourse/plugins/chat/discourse/models/chat-message-mention-warning";
 import { cloneJSON } from "discourse-common/lib/object";
 import { bind } from "discourse-common/utils/decorators";
 
@@ -16,7 +15,7 @@ export function handleStagedMessage(channel, messagesManager, data) {
   stagedMessage.staged = false;
   stagedMessage.excerpt = data.chat_message.excerpt;
   stagedMessage.channel = channel;
-  stagedMessage.createdAt = data.chat_message.created_at;
+  stagedMessage.createdAt = new Date(data.chat_message.created_at);
   stagedMessage.cooked = data.chat_message.cooked;
 
   return stagedMessage;
@@ -37,23 +36,26 @@ export function handleStagedMessage(channel, messagesManager, data) {
 export default class ChatPaneBaseSubscriptionsManager extends Service {
   @service chat;
   @service currentUser;
-  @service chatStagedThreadMapping;
 
-  get messageBusChannel() {
-    throw "not implemented";
-  }
-
-  get messageBusLastId() {
-    throw "not implemented";
-  }
+  messageBusChannel = null;
+  messageBusLastId = null;
 
   get messagesManager() {
     return this.model.messagesManager;
   }
 
+  beforeSubscribe() {}
+  afterMessage() {}
+
   subscribe(model) {
     this.unsubscribe();
+    this.beforeSubscribe(model);
     this.model = model;
+
+    if (!this.messageBusChannel) {
+      return;
+    }
+
     this.messageBus.subscribe(
       this.messageBusChannel,
       this.onMessage,
@@ -101,9 +103,6 @@ export default class ChatPaneBaseSubscriptionsManager extends Service {
       case "restore":
         this.handleRestoreMessage(busData);
         break;
-      case "mention_warning":
-        this.handleMentionWarning(busData);
-        break;
       case "self_flagged":
         this.handleSelfFlaggedMessage(busData);
         break;
@@ -120,6 +119,8 @@ export default class ChatPaneBaseSubscriptionsManager extends Service {
         this.handleNotice(busData);
         break;
     }
+
+    this.afterMessage(this.model, ...arguments);
   }
 
   handleSentMessage() {
@@ -191,16 +192,9 @@ export default class ChatPaneBaseSubscriptionsManager extends Service {
     if (message) {
       message.deletedAt = null;
     } else {
-      this.messagesManager.addMessages([
-        ChatMessage.create(this.args.channel, data.chat_message),
-      ]);
-    }
-  }
-
-  handleMentionWarning(data) {
-    const message = this.messagesManager.findMessage(data.chat_message_id);
-    if (message) {
-      message.mentionWarning = ChatMessageMentionWarning.create(message, data);
+      const newMessage = ChatMessage.create(this.model, data.chat_message);
+      newMessage.manager = this.messagesManager;
+      this.messagesManager.addMessages([newMessage]);
     }
   }
 
@@ -220,30 +214,14 @@ export default class ChatPaneBaseSubscriptionsManager extends Service {
 
   handleNewThreadCreated(data) {
     this.model.threadsManager
-      .find(this.model.id, data.staged_thread_id, { fetchIfNotFound: false })
-      .then((stagedThread) => {
-        if (stagedThread) {
-          this.chatStagedThreadMapping.setMapping(
-            data.thread_id,
-            stagedThread.id
-          );
-          stagedThread.staged = false;
-          stagedThread.id = data.thread_id;
-          stagedThread.originalMessage.thread = stagedThread;
-          stagedThread.originalMessage.thread.preview.replyCount ??= 1;
-        } else if (data.thread_id) {
-          this.model.threadsManager
-            .find(this.model.id, data.thread_id, { fetchIfNotFound: true })
-            .then((thread) => {
-              const channelOriginalMessage =
-                this.model.messagesManager.findMessage(
-                  thread.originalMessage.id
-                );
+      .find(this.model.id, data.thread_id, { fetchIfNotFound: true })
+      .then((thread) => {
+        const channelOriginalMessage = this.model.messagesManager.findMessage(
+          thread.originalMessage.id
+        );
 
-              if (channelOriginalMessage) {
-                channelOriginalMessage.thread = thread;
-              }
-            });
+        if (channelOriginalMessage) {
+          channelOriginalMessage.thread = thread;
         }
       });
   }

@@ -29,6 +29,7 @@ export default class History extends Component {
   @tracked postRevision;
   @tracked viewMode = this.site?.mobileView ? "inline" : "side_by_side";
   @tracked bodyDiff;
+  @tracked initialLoad = true;
 
   constructor() {
     super(...arguments);
@@ -45,6 +46,7 @@ export default class History extends Component {
   get loadPreviousDisabled() {
     return (
       this.loading ||
+      !this.postRevision.previous_revision ||
       (!this.postRevision.previous_revision &&
         this.postRevision.current_revision <=
           this.postRevision.previous_revision)
@@ -160,16 +162,19 @@ export default class History extends Component {
   }
 
   get revertToRevisionText() {
-    return I18n.t("post.revisions.controls.revert", {
-      revision: this.previousVersion,
-    });
+    if (this.previousVersion) {
+      return I18n.t("post.revisions.controls.revert", {
+        revision: this.previousVersion,
+      });
+    }
   }
 
   refresh(postId, postVersion) {
     this.loading = true;
     Post.loadRevision(postId, postVersion).then((result) => {
-      this.loading = false;
       this.postRevision = result;
+      this.loading = false;
+      this.initialLoad = false;
     });
   }
 
@@ -200,7 +205,7 @@ export default class History extends Component {
         }
         this.args.closeModal();
       })
-      .catch(function (e) {
+      .catch((e) => {
         if (e.jqXHR.responseJSON?.errors?.[0]) {
           this.dialog.alert(e.jqXHR.responseJSON.errors[0]);
         }

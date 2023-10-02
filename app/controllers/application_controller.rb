@@ -51,6 +51,7 @@ class ApplicationController < ActionController::Base
   after_action :add_noindex_header,
                if: -> { is_feed_request? || !SiteSetting.allow_index_in_robots_txt }
   after_action :add_noindex_header_to_non_canonical, if: :spa_boot_request?
+  after_action :set_cross_origin_opener_policy_header, if: :spa_boot_request?
   around_action :link_preload, if: -> { spa_boot_request? && GlobalSetting.preload_link_header }
 
   HONEYPOT_KEY ||= "HONEYPOT_KEY"
@@ -930,7 +931,7 @@ class ApplicationController < ActionController::Base
         Discourse
           .cache
           .fetch(key, expires_in: 10.minutes) do
-            category_topic_ids = Category.pluck(:topic_id).compact
+            category_topic_ids = Category.select(:topic_id).where.not(topic_id: nil)
             @top_viewed =
               TopicQuery
                 .new(nil, except_topic_ids: category_topic_ids)
@@ -982,6 +983,12 @@ class ApplicationController < ActionController::Base
     if canonical.present? && canonical != request.url &&
          !SiteSetting.allow_indexing_non_canonical_urls
       response.headers["X-Robots-Tag"] ||= "noindex"
+    end
+  end
+
+  def set_cross_origin_opener_policy_header
+    if SiteSetting.cross_origin_opener_policy_header != "unsafe-none"
+      response.headers["Cross-Origin-Opener-Policy"] = SiteSetting.cross_origin_opener_policy_header
     end
   end
 
@@ -1083,5 +1090,34 @@ class ApplicationController < ActionController::Base
           }
         end
       end
+  end
+
+  def fetch_limit_from_params(params: self.params, default:, max:)
+    fetch_int_from_params(:limit, params: params, default: default, max: max)
+  end
+
+  def fetch_int_from_params(key, params: self.params, default:, min: 0, max: nil)
+    key = key.to_sym
+
+    if default.present? && ((max.present? && default > max) || (min.present? && default < min))
+      raise "default #{key.inspect} is not between #{min.inspect} and #{max.inspect}"
+    end
+
+    if params.has_key?(key)
+      value =
+        begin
+          Integer(params[key])
+        rescue ArgumentError
+          raise Discourse::InvalidParameters.new(key)
+        end
+
+      if (min.present? && value < min) || (max.present? && value > max)
+        raise Discourse::InvalidParameters.new(key)
+      end
+
+      value
+    else
+      default
+    end
   end
 end

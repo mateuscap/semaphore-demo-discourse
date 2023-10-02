@@ -24,7 +24,6 @@ module Chat
     #   @param [Integer] offset
     #   @return [Service::Base::Context]
 
-    policy :threaded_discussions_enabled
     contract
     step :set_limit
     step :set_offset
@@ -34,6 +33,7 @@ module Chat
     model :threads
     step :fetch_tracking
     step :fetch_memberships
+    step :fetch_participants
     step :build_load_more_url
 
     # @!visibility private
@@ -53,10 +53,6 @@ module Chat
 
     def set_offset(contract:, **)
       context.offset = [contract.offset || 0, 0].max
-    end
-
-    def threaded_discussions_enabled
-      ::SiteSetting.enable_experimental_chat_threaded_discussions
     end
 
     def fetch_channel(contract:, **)
@@ -136,6 +132,10 @@ module Chat
           thread_id: threads.map(&:id),
           user_id: guardian.user.id,
         )
+    end
+
+    def fetch_participants(threads:, **)
+      context.participants = ::Chat::ThreadParticipantQuery.call(thread_ids: threads.map(&:id))
     end
 
     def build_load_more_url(contract:, **)

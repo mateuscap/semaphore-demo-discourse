@@ -61,16 +61,19 @@
             {{/unless}}
           {{/if}}
         {{else}}
-          {{#each this.pollOptions as |option|}}
+          {{#each this.pollOptions as |option index|}}
             <div class="input-group poll-option-value">
-              <Input
-                @value={{option.value}}
-                @enter={{action "addOption" option}}
+              <input
+                type="text"
+                value={{option.value}}
+                {{auto-focus}}
+                {{on "input" (fn this.updateValue option)}}
+                {{on "keydown" (fn this.onInputKeydown index)}}
               />
               {{#if this.canRemoveOption}}
                 <DButton
                   @icon="trash-alt"
-                  @action={{action "removeOption" option}}
+                  @action={{fn this.removeOption option}}
                 />
               {{/if}}
             </div>
@@ -78,10 +81,10 @@
 
           <div class="poll-option-controls">
             <DButton
-              class="btn-default poll-option-add"
               @icon="plus"
               @label="poll.ui_builder.poll_options.add"
-              @action={{action "addOption" this.pollOptions.lastObject}}
+              @action={{fn this.addOption -1}}
+              class="btn-default poll-option-add"
             />
             {{#if
               (and
@@ -227,24 +230,24 @@
   </:body>
   <:footer>
     <DButton
-      @action={{action "insertPoll"}}
+      @action={{this.insertPoll}}
       @icon="chart-bar"
-      class="btn-primary insert-poll"
       @label="poll.ui_builder.insert"
       @disabled={{this.disableInsert}}
+      class="btn-primary insert-poll"
     />
 
-    <DButton @label="cancel" @class="btn-flat" @action={{@closeModal}} />
+    <DButton @label="cancel" @action={{@closeModal}} class="btn-flat" />
 
     <DButton
-      @action={{action "toggleAdvanced"}}
-      class="btn-default show-advanced"
+      @action={{this.toggleAdvanced}}
       @icon="cog"
       @title={{if
         this.showAdvanced
         "poll.ui_builder.hide_advanced"
         "poll.ui_builder.show_advanced"
       }}
+      class="btn-default show-advanced"
     />
 
   </:footer>

@@ -13,49 +13,24 @@ export default class ChatApi extends Service {
   @service chat;
   @service chatChannelsManager;
 
-  /**
-   * Get a channel by its ID.
-   * @param {number} channelId - The ID of the channel.
-   * @returns {Promise}
-   *
-   * @example
-   *
-   *    this.chatApi.channel(1).then(channel => { ... })
-   */
-  channel(channelId, data = {}) {
-    const args = {};
-    args.page_size = data.pageSize;
+  channel(channelId) {
+    return this.#getRequest(`/channels/${channelId}`);
+  }
 
-    if (data.targetMessageId) {
-      args.target_message_id = data.targetMessageId;
-    } else if (data.fetchFromLastRead) {
-      args.fetch_from_last_read = true;
-    } else {
-      if (data.direction) {
-        args.direction = data.direction;
-      }
+  channelThreadMessages(channelId, threadId, params = {}) {
+    return this.#getRequest(
+      `/channels/${channelId}/threads/${threadId}/messages?${new URLSearchParams(
+        params
+      ).toString()}`
+    );
+  }
 
-      if (data.includeMessages) {
-        args.include_messages = true;
-      }
-
-      if (data.messageId) {
-        args.target_message_id = data.messageId;
-      }
-
-      if (data.threadId) {
-        args.thread_id = data.threadId;
-      }
-
-      if (data.targetDate) {
-        args.target_date = data.targetDate;
-      }
-    }
-
-    return this.#getRequest(`/channels/${channelId}`, args).then((result) => {
-      this.chatChannelsManager.store(result.channel);
-      return result;
-    });
+  channelMessages(channelId, params = {}) {
+    return this.#getRequest(
+      `/channels/${channelId}/messages?${new URLSearchParams(
+        params
+      ).toString()}`
+    );
   }
 
   /**
@@ -178,7 +153,6 @@ export default class ChatApi extends Service {
    * @param {number} [data.in_reply_to_id] - The ID of the replied-to message.
    * @param {number} [data.staged_id] - The staged ID of the message before it was persisted.
    * @param {number} [data.thread_id] - The ID of the thread where this message should be posted.
-   * @param {number} [data.staged_thread_id] - The staged ID of the thread before it was persisted.
    * @param {Array.<number>} [data.upload_ids] - Array of upload ids linked to the message.
    * @returns {Promise}
    */
@@ -227,6 +201,21 @@ export default class ChatApi extends Service {
    */
   updateChannel(channelId, data = {}) {
     return this.#putRequest(`/channels/${channelId}`, { channel: data });
+  }
+
+  /**
+   * Creates a thread.
+   * @param {number} channelId - The ID of the channel.
+   * @param {number} originalMessageId - The ID of the original message.
+   * @param {object} data - Params of the thread.
+   * @param {string} [data.title] - Title of the thread.
+   * @returns {Promise}
+   */
+  createThread(channelId, originalMessageId, data = {}) {
+    return this.#postRequest(`/channels/${channelId}/threads`, {
+      title: data.title,
+      original_message_id: originalMessageId,
+    });
   }
 
   /**

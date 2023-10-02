@@ -15,23 +15,9 @@ describe "Thread indicator for chat messages", type: :system do
     sign_in(current_user)
   end
 
-  context "when enable_experimental_chat_threaded_discussions is disabled" do
-    fab!(:channel) { Fabricate(:chat_channel) }
-    before { SiteSetting.enable_experimental_chat_threaded_discussions = false }
-
-    it "shows no thread indicators in the channel" do
-      thread = chat_thread_chain_bootstrap(channel: channel, users: [current_user, other_user])
-      chat_page.visit_channel(channel)
-      expect(channel_page).to have_no_thread_indicator(thread.original_message)
-    end
-  end
-
   context "when threading_enabled is false for the channel" do
     fab!(:channel) { Fabricate(:chat_channel) }
-    before do
-      SiteSetting.enable_experimental_chat_threaded_discussions = true
-      channel.update!(threading_enabled: false)
-    end
+    before { channel.update!(threading_enabled: false) }
 
     it "shows no thread inidcators in the channel" do
       thread = chat_thread_chain_bootstrap(channel: channel, users: [current_user, other_user])
@@ -40,7 +26,7 @@ describe "Thread indicator for chat messages", type: :system do
     end
   end
 
-  context "when enable_experimental_chat_threaded_discussions is true and threading is enabled for the channel" do
+  context "when threading is enabled for the channel" do
     fab!(:channel) { Fabricate(:chat_channel) }
     fab!(:thread_1) do
       chat_thread_chain_bootstrap(channel: channel, users: [current_user, other_user])
@@ -53,10 +39,7 @@ describe "Thread indicator for chat messages", type: :system do
       )
     end
 
-    before do
-      SiteSetting.enable_experimental_chat_threaded_discussions = true
-      channel.update!(threading_enabled: true)
-    end
+    before { channel.update!(threading_enabled: true) }
 
     it "throws thread indicators on all original messages" do
       chat_page.visit_channel(channel)
@@ -76,9 +59,8 @@ describe "Thread indicator for chat messages", type: :system do
 
     it "it shows the reply count but no participant avatars when there is only one participant" do
       single_user_thread =
-        Fabricate(:chat_thread, channel: channel, original_message_user: current_user)
-      Fabricate(:chat_message, thread: single_user_thread, user: current_user)
-      Fabricate(:chat_message, thread: single_user_thread, user: current_user)
+        chat_thread_chain_bootstrap(channel: channel, users: [current_user], messages_count: 3)
+
       chat_page.visit_channel(channel)
       expect(
         channel_page.message_thread_indicator(single_user_thread.original_message),

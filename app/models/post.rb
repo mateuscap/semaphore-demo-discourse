@@ -64,6 +64,7 @@ class Post < ActiveRecord::Base
   has_many :reviewables, as: :target, dependent: :destroy
 
   validates_with PostValidator, unless: :skip_validation
+  validates :edit_reason, length: { maximum: 1000 }
 
   after_commit :index_search
 
@@ -566,8 +567,15 @@ class Post < ActiveRecord::Base
 
   def with_secure_uploads?
     return false if !SiteSetting.secure_uploads?
-    SiteSetting.login_required? ||
-      (topic.present? && (topic.private_message? || topic.category&.read_restricted))
+
+    # NOTE: This is meant to be a stopgap solution to prevent secure uploads
+    # in a single place (private messages) for sensitive admin data exports.
+    # Ideally we would want a more comprehensive way of saying that certain
+    # upload types get secured which is a hybrid/mixed mode secure uploads,
+    # but for now this will do the trick.
+    return topic&.private_message? if SiteSetting.secure_uploads_pm_only?
+
+    SiteSetting.login_required? || topic&.private_message? || topic&.category&.read_restricted?
   end
 
   def hide!(post_action_type_id, reason = nil, custom_message: nil)
@@ -584,13 +592,10 @@ class Post < ActiveRecord::Base
 
     hiding_again = hidden_at.present?
 
-    self.hidden = true
-    self.hidden_at = Time.zone.now
-    self.hidden_reason_id = reason
-    self.skip_unique_check = true
-
     Post.transaction do
-      save!
+      self.skip_validation = true
+
+      update!(hidden: true, hidden_at: Time.zone.now, hidden_reason_id: reason)
 
       Topic.where(
         "id = :topic_id AND NOT EXISTS(SELECT 1 FROM POSTS WHERE topic_id = :topic_id AND NOT hidden)",
@@ -870,7 +875,8 @@ class Post < ActiveRecord::Base
     start_date,
     end_date,
     category_id = nil,
-    include_subcategories = false
+    include_subcategories = false,
+    group_ids = nil
   )
     result =
       public_posts.where(
@@ -883,8 +889,15 @@ class Post < ActiveRecord::Base
       if include_subcategories
         result = result.where("topics.category_id IN (?)", Category.subcategory_ids(category_id))
       else
-        result = result.where("topics.category_id = ?", category_id)
+        result = result.where("topics.category_id IN (?)", category_id)
       end
+    end
+    if group_ids
+      result =
+        result
+          .joins("INNER JOIN users ON users.id = posts.user_id")
+          .joins("INNER JOIN group_users ON group_users.user_id = users.id")
+          .where("group_users.group_id IN (?)", group_ids)
     end
 
     result.group("date(posts.created_at)").order("date(posts.created_at)").count
@@ -1320,6 +1333,7 @@ end
 #  index_posts_on_id_topic_id_where_not_deleted_or_empty  (id,topic_id) WHERE ((deleted_at IS NULL) AND (raw <> ''::text))
 #  index_posts_on_image_upload_id                         (image_upload_id)
 #  index_posts_on_reply_to_post_number                    (reply_to_post_number)
+#  index_posts_on_topic_id_and_created_at                 (topic_id,created_at)
 #  index_posts_on_topic_id_and_percent_rank               (topic_id,percent_rank)
 #  index_posts_on_topic_id_and_post_number                (topic_id,post_number) UNIQUE
 #  index_posts_on_topic_id_and_sort_order                 (topic_id,sort_order)

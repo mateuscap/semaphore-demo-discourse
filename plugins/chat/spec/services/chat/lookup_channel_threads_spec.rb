@@ -15,16 +15,6 @@ RSpec.describe ::Chat::LookupChannelThreads do
   let(:offset) { 0 }
   let(:params) { { guardian: guardian, channel_id: channel_id, limit: limit, offset: offset } }
 
-  before { SiteSetting.enable_experimental_chat_threaded_discussions = true }
-
-  describe "policy - threaded_discussions_enabled" do
-    context "when disabled" do
-      before { SiteSetting.enable_experimental_chat_threaded_discussions = false }
-
-      it { is_expected.to fail_a_policy(:threaded_discussions_enabled) }
-    end
-  end
-
   describe "step - set_limit" do
     fab!(:channel_1) { Fabricate(:chat_channel) }
     let(:channel_id) { channel_1.id }
@@ -136,13 +126,15 @@ RSpec.describe ::Chat::LookupChannelThreads do
           [thread_2, 1.day.ago],
           [thread_3, 2.seconds.ago],
         ].each do |thread, created_at|
-          Fabricate(
-            :chat_message,
-            user: current_user,
-            chat_channel: channel_1,
-            thread: thread,
-            created_at: created_at,
-          )
+          message =
+            Fabricate(
+              :chat_message,
+              user: current_user,
+              chat_channel: channel_1,
+              thread: thread,
+              created_at: created_at,
+            )
+          thread.update!(last_message: message)
         end
 
         expect(result.threads.map(&:id)).to eq([thread_3.id, thread_1.id, thread_2.id])
@@ -151,6 +143,7 @@ RSpec.describe ::Chat::LookupChannelThreads do
       it "sorts by unread over recency" do
         unread_message = Fabricate(:chat_message, chat_channel: channel_1, thread: thread_2)
         unread_message.update!(created_at: 2.days.ago)
+        thread_2.update!(last_message: unread_message)
 
         expect(result.threads.map(&:id)).to eq([thread_2.id, thread_1.id, thread_3.id])
       end
@@ -266,6 +259,14 @@ RSpec.describe ::Chat::LookupChannelThreads do
             thread_id: [thread_1, thread_2, thread_3].map(&:id),
             user_id: current_user.id,
           ),
+        )
+      end
+    end
+
+    describe "step - fetch_participants" do
+      it "returns correct participants" do
+        expect(result.participants).to eq(
+          ::Chat::ThreadParticipantQuery.call(thread_ids: [thread_1, thread_2, thread_3].map(&:id)),
         )
       end
     end

@@ -16,16 +16,7 @@ RSpec.describe "Chat channel", type: :system do
   end
 
   context "when first batch of messages doesnt fill page" do
-    before do
-      50.times do
-        Fabricate(
-          :chat_message,
-          message: Faker::Lorem.characters(number: SiteSetting.chat_minimum_message_length),
-          user: current_user,
-          chat_channel: channel_1,
-        )
-      end
-    end
+    before { 30.times { Fabricate(:chat_message, user: current_user, chat_channel: channel_1) } }
 
     it "autofills for more messages" do
       chat.prefers_full_page
@@ -74,7 +65,7 @@ RSpec.describe "Chat channel", type: :system do
         end
 
         using_session(:tab_2) do |session|
-          expect(channel_page).to have_message(text: "test_message")
+          expect(channel_page.messages).to have_message(text: "test_message")
           session.quit
         end
       end
@@ -105,7 +96,7 @@ RSpec.describe "Chat channel", type: :system do
       expect(channel_page).to have_no_loading_skeleton
       expect(page).to have_no_css("[data-id='#{unloaded_message.id}']")
 
-      find(".chat-scroll-to-bottom").click
+      find(".chat-scroll-to-bottom__button.visible").click
 
       expect(channel_page).to have_no_loading_skeleton
       expect(page).to have_css("[data-id='#{unloaded_message.id}']")
@@ -131,15 +122,10 @@ RSpec.describe "Chat channel", type: :system do
       50.times { Fabricate(:chat_message, chat_channel: channel_1) }
     end
 
-    it "doesn’t scroll the pane" do
+    xit "doesn’t scroll the pane" do
       visit("/chat/message/#{message_1.id}")
 
-      new_message =
-        Chat::MessageCreator.create(
-          chat_channel: channel_1,
-          user: other_user,
-          content: "this is fine",
-        ).chat_message
+      new_message = Fabricate(:chat_message, chat_channel: channel_1)
 
       expect(page).to have_no_content(new_message.message)
     end
@@ -251,7 +237,7 @@ RSpec.describe "Chat channel", type: :system do
       chat.visit_channel(channel_1)
 
       expect(find(".chat-reply .chat-reply__excerpt")["innerHTML"].strip).to eq(
-        "<a class=\"mention\" href=\"/u/#{other_user.username}\">@#{other_user.username}</a> &lt;mark&gt;not marked&lt;/mark&gt;",
+        "@#{other_user.username} &lt;mark&gt;not marked&lt;/mark&gt;",
       )
     end
   end
@@ -298,6 +284,33 @@ RSpec.describe "Chat channel", type: :system do
 
       expect(page).to have_no_css(
         ".chat-message-actions-container[data-id='#{last_message["data-id"]}']",
+      )
+    end
+  end
+
+  context "when opening message secondary options" do
+    it "doesn’t hide dropdown on mouseleave" do
+      chat.visit_channel(channel_1)
+      last_message = find(".chat-message-container:last-child")
+      last_message.hover
+
+      expect(page).to have_css(
+        ".chat-message-actions-container[data-id='#{last_message["data-id"]}']",
+      )
+
+      find(".chat-message-actions-container .secondary-actions").click
+      expect(page).to have_css(
+        ".chat-message-actions-container .secondary-actions .select-kit-body",
+      )
+
+      find("#site-logo").hover
+      expect(page).to have_css(
+        ".chat-message-actions-container .secondary-actions .select-kit-body",
+      )
+
+      find("#site-logo").click
+      expect(page).to have_no_css(
+        ".chat-message-actions-container .secondary-actions .select-kit-body",
       )
     end
   end

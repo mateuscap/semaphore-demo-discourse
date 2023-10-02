@@ -17,7 +17,7 @@ sr:
       no_day: "%Y %B"
   date:
     month_names:
-    - null
+    -
     - januar
     - februar
     - mart
@@ -508,7 +508,6 @@ sr:
       approve:
         title: "Odobri"
       reject_user:
-        title: "Obriši Korisnika..."
         delete:
           title: "Obriši Korisnika"
       reject:

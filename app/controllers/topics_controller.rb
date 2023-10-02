@@ -53,8 +53,8 @@ class TopicsController < ApplicationController
   def show
     flash["referer"] ||= request.referer[0..255] if request.referer
 
-    # We'd like to migrate the wordpress feed to another url. This keeps up backwards compatibility with
-    # existing installs.
+    # TODO: We'd like to migrate the wordpress feed to another url. This keeps up backwards
+    # compatibility with existing installs.
     return wordpress if params[:best].present?
 
     # work around people somehow sending in arrays,
@@ -212,15 +212,19 @@ class TopicsController < ApplicationController
       :only_moderator_liked,
     )
 
-    opts = {
-      best: params[:best].to_i,
-      min_trust_level: params[:min_trust_level] ? params[:min_trust_level].to_i : 1,
-      min_score: params[:min_score].to_i,
-      min_replies: params[:min_replies].to_i,
-      bypass_trust_level_score: params[:bypass_trust_level_score].to_i, # safe cause 0 means ignore
-      only_moderator_liked: params[:only_moderator_liked].to_s == "true",
-      exclude_hidden: true,
-    }
+    begin
+      opts = {
+        best: params[:best].to_i,
+        min_trust_level: params[:min_trust_level] ? params[:min_trust_level].to_i : 1,
+        min_score: params[:min_score].to_i,
+        min_replies: params[:min_replies].to_i,
+        bypass_trust_level_score: params[:bypass_trust_level_score].to_i, # safe cause 0 means ignore
+        only_moderator_liked: params[:only_moderator_liked].to_s == "true",
+        exclude_hidden: true,
+      }
+    rescue NoMethodError
+      raise Discourse::InvalidParameters
+    end
 
     @topic_view = TopicView.new(params[:topic_id], current_user, opts)
     discourse_expires_in 1.minute
@@ -340,7 +344,7 @@ class TopicsController < ApplicationController
     topic = Topic.find_by(id: params[:id])
     guardian.ensure_can_edit!(topic)
 
-    category = Category.where(id: params[:category_id].to_i).first
+    category = Category.find_by(id: params[:category_id].to_i)
     guardian.ensure_can_publish_topic!(topic, category)
 
     row_count = SharedDraft.where(topic_id: topic.id).update_all(category_id: category.id)
@@ -1062,13 +1066,17 @@ class TopicsController < ApplicationController
     if tag_name = params[:tag_id]
       tag_name = DiscourseTagging.visible_tags(guardian).where(name: tag_name).pluck(:name).first
     end
+
     topic_scope =
       if params[:category_id].present?
-        category_ids = [params[:category_id].to_i]
-        if ActiveModel::Type::Boolean.new.cast(params[:include_subcategories])
-          category_ids =
-            category_ids.concat(Category.where(parent_category_id: params[:category_id]).pluck(:id))
-        end
+        category_id = params[:category_id].to_i
+
+        category_ids =
+          if ActiveModel::Type::Boolean.new.cast(params[:include_subcategories])
+            Category.subcategory_ids(category_id)
+          else
+            [category_id]
+          end
 
         category_ids &= guardian.allowed_category_ids
         if category_ids.blank?
@@ -1179,14 +1187,23 @@ class TopicsController < ApplicationController
 
     RateLimiter.new(current_user, "summary", 6, 5.minutes).performed! if current_user
 
-    hijack do
-      summary = TopicSummarization.new(strategy).summarize(topic, current_user)
+    opts = params.permit(:skip_age_check)
 
-      render json: {
-               summary: summary.summarized_text,
-               summarized_on: summary.updated_at,
-               summarized_by: summary.algorithm,
-             }
+    if params[:stream] && current_user
+      Jobs.enqueue(
+        :stream_topic_summary,
+        topic_id: topic.id,
+        user_id: current_user.id,
+        opts: opts.as_json,
+      )
+
+      render json: success_json
+    else
+      hijack do
+        summary = TopicSummarization.new(strategy).summarize(topic, current_user, opts)
+
+        render_serialized(summary, TopicSummarySerializer)
+      end
     end
   end
 
@@ -1386,17 +1403,18 @@ class TopicsController < ApplicationController
           topic_query.joined_topic_user,
           whisperer: guardian.is_whisperer?,
         ).listable_topics
+
       topics = TopicQuery.tracked_filter(topics, current_user.id) if params[:tracked].to_s == "true"
 
       if params[:category_id]
-        if params[:include_subcategories]
-          topics = topics.where(<<~SQL, category_id: params[:category_id])
-            category_id in (select id FROM categories WHERE parent_category_id = :category_id) OR
-            category_id = :category_id
-          SQL
-        else
-          topics = topics.where("category_id = ?", params[:category_id])
-        end
+        category_ids =
+          if params[:include_subcategories]
+            Category.subcategory_ids(params[:category_id].to_i)
+          else
+            params[:category_id]
+          end
+
+        topics = topics.where(category_id: category_ids)
       end
 
       if params[:tag_name].present?

@@ -206,7 +206,14 @@ function replaceIn(bootstrap, template, id, headers, baseURL) {
   BUILDERS[id](buffer, bootstrap, headers, baseURL);
   let contents = buffer.filter((b) => b && b.length > 0).join("\n");
 
-  return template.replace(`<bootstrap-content key="${id}">`, contents);
+  if (id === "html-tag") {
+    return template.replace(`<html>`, contents);
+  } else {
+    return template.replace(
+      `<bootstrap-content key="${id}"></bootstrap-content>`,
+      contents
+    );
+  }
 }
 
 function extractPreloadJson(html) {
@@ -512,6 +519,15 @@ to serve API requests. For example:
         `${baseURL}testem.js`,
         `${baseURL}assets/test-i18n.js`,
       ].includes(request.path)
+    ) {
+      return false;
+    }
+
+    // All JS assets are served by Ember CLI, except for
+    // plugin assets which end in _extra.js
+    if (
+      request.path.startsWith(`${baseURL}assets/`) &&
+      !request.path.endsWith("_extra.js")
     ) {
       return false;
     }

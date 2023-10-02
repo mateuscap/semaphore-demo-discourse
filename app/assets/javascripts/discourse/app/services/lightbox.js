@@ -9,14 +9,16 @@ import {
   getSiteThemeColor,
   setSiteThemeColor,
 } from "discourse/lib/lightbox/helpers";
-
 import { bind } from "discourse-common/utils/decorators";
 import { isDocumentRTL } from "discourse/lib/text-direction";
 import { processHTML } from "discourse/lib/lightbox/process-html";
+import { disableImplicitInjections } from "discourse/lib/implicit-injections";
 
+@disableImplicitInjections
 export default class LightboxService extends Service {
   @service appEvents;
   @service site;
+  @service siteSettings;
 
   lightboxIsOpen = false;
   lightboxClickElements = [];
@@ -42,7 +44,7 @@ export default class LightboxService extends Service {
     this.options = {
       isMobile: this.site.mobileView,
       isRTL: isDocumentRTL(),
-      minCarosuelArrowItemCount: MIN_CAROUSEL_ARROW_ITEM_COUNT,
+      minCarouselArrowItemCount: MIN_CAROUSEL_ARROW_ITEM_COUNT,
       zoomOnOpen: false,
       canDownload:
         this.currentUser ||
@@ -107,8 +109,12 @@ export default class LightboxService extends Service {
   }
 
   @bind
-  async openLightbox({ container, selector }) {
-    const { items, startingIndex } = await processHTML({ container, selector });
+  async openLightbox({ container, selector, clickTarget }) {
+    const { items, startingIndex } = await processHTML({
+      container,
+      selector,
+      clickTarget,
+    });
 
     if (!items.length) {
       return;
@@ -236,6 +242,7 @@ export default class LightboxService extends Service {
   }
 
   handleClickEvent(event, trigger) {
+    const closestTrigger = event.target.closest(trigger);
     const isLightboxClick = event
       .composedPath()
       .find(
@@ -254,6 +261,7 @@ export default class LightboxService extends Service {
     this.openLightbox({
       container: event.currentTarget,
       selector: trigger,
+      clickTarget: closestTrigger,
     });
 
     event.target.toggleAttribute(SELECTORS.DOCUMENT_LAST_FOCUSED_ELEMENT);

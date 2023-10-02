@@ -11,7 +11,9 @@ RSpec.describe "Visit channel", type: :system do
   fab!(:inaccessible_dm_channel_1) { Fabricate(:direct_message_channel) }
 
   let(:chat) { PageObjects::Pages::Chat.new }
+  let(:sidebar_page) { PageObjects::Pages::Sidebar.new }
   let(:channel_page) { PageObjects::Pages::ChatChannel.new }
+  let(:dialog) { PageObjects::Components::Dialog.new }
 
   before { chat_system_bootstrap }
 
@@ -132,7 +134,7 @@ RSpec.describe "Visit channel", type: :system do
             chat.visit_channel(category_channel_1)
 
             expect(page).to have_content(category_channel_1.name)
-            expect(chat).to have_message(message_1)
+            expect(channel_page.messages).to have_message(id: message_1.id)
           end
         end
 
@@ -165,7 +167,7 @@ RSpec.describe "Visit channel", type: :system do
             chat.visit_channel(category_channel_1)
 
             expect(page).to have_content(category_channel_1.name)
-            expect(chat).to have_message(message_1)
+            expect(channel_page.messages).to have_message(id: message_1.id)
           end
 
           context "when URL doesn’t contain slug" do
@@ -175,6 +177,28 @@ RSpec.describe "Visit channel", type: :system do
               expect(page).to have_current_path(
                 "/chat/c/#{category_channel_1.slug}/#{category_channel_1.id}",
               )
+            end
+          end
+
+          context "when visiting a specific channel message ID then navigating to another channel" do
+            fab!(:early_message) { Fabricate(:chat_message, chat_channel: category_channel_1) }
+            fab!(:other_channel) do
+              Fabricate(:category_channel, category: category_channel_1.chatable)
+            end
+            fab!(:other_channel_message) { Fabricate(:chat_message, chat_channel: other_channel) }
+
+            before do
+              30.times { Fabricate(:chat_message, chat_channel: category_channel_1) }
+              other_channel.add(current_user)
+            end
+
+            it "does not error" do
+              visit(early_message.url)
+              expect(channel_page).to have_no_loading_skeleton
+              expect(channel_page.messages).to have_message(id: early_message.id)
+              sidebar_page.open_channel(other_channel)
+              expect(dialog).to be_closed
+              expect(channel_page.messages).to have_message(id: other_channel_message.id)
             end
           end
         end
@@ -193,7 +217,7 @@ RSpec.describe "Visit channel", type: :system do
           it "shows a preview of the channel" do
             chat.visit_channel(dm_channel_1)
 
-            expect(chat).to have_message(message_1)
+            expect(channel_page.messages).to have_message(id: message_1.id)
           end
 
           context "when URL doesn’t contain slug" do

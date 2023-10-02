@@ -4,7 +4,7 @@ require "rotp"
 
 RSpec.describe UsersController do
   fab!(:user) { Fabricate(:user) }
-  fab!(:user1) { Fabricate(:user) }
+  fab!(:user1) { Fabricate(:user, username: "someusername") }
   fab!(:another_user) { Fabricate(:user) }
   fab!(:invitee) { Fabricate(:user) }
   fab!(:inviter) { Fabricate(:user) }
@@ -457,10 +457,9 @@ RSpec.describe UsersController do
           end
         end
 
-        it "stages a webauthn challenge and rp-id for the user" do
+        it "stages a webauthn challenge for the user" do
           secure_session = SecureSession.new(session["secure_session_id"])
-          expect(Webauthn.challenge(user1, secure_session)).not_to eq(nil)
-          expect(Webauthn.rp_id(user1, secure_session)).to eq(Discourse.current_hostname)
+          expect(DiscourseWebauthn.challenge(user1, secure_session)).not_to eq(nil)
         end
 
         it "changes password with valid security key challenge and authentication" do
@@ -835,6 +834,46 @@ RSpec.describe UsersController do
         end
       end
 
+      context "when normalize_emails is enabled" do
+        let (:email) {
+          "jane+100@gmail.com"
+        }
+        let (:dupe_email) {
+          "jane+191@gmail.com"
+        }
+        let! (:user) {
+          Fabricate(:user, email: email, password: "strongpassword")
+        }
+
+        before do
+          SiteSetting.hide_email_address_taken = true
+          SiteSetting.normalize_emails = true
+        end
+
+        it "sends an email to normalized email owner when hide_email_address_taken is enabled" do
+          expect do
+            expect_enqueued_with(
+              job: Jobs::CriticalUserEmail,
+              args: {
+                type: "account_exists",
+                user_id: user.id,
+              },
+            ) do
+              post "/u.json",
+                   params: {
+                     name: "Jane Doe",
+                     username: "janedoe9999",
+                     password: "strongpassword",
+                     email: dupe_email,
+                   }
+            end
+          end.to_not change { User.count }
+
+          expect(response.status).to eq(200)
+          expect(session["user_created_message"]).to be_present
+        end
+      end
+
       context "when users already exists with given email" do
         let!(:existing) { Fabricate(:user, email: post_user_params[:email]) }
 
@@ -851,7 +890,15 @@ RSpec.describe UsersController do
 
         it "returns success if hide_email_address_taken is enabled" do
           SiteSetting.hide_email_address_taken = true
-          expect { post_user }.to_not change { User.count }
+          expect {
+            expect_enqueued_with(
+              job: Jobs::CriticalUserEmail,
+              args: {
+                type: "account_exists",
+                user_id: existing.id,
+              },
+            ) { post_user }
+          }.to_not change { User.count }
 
           expect(response.status).to eq(200)
           expect(session["user_created_message"]).to be_present
@@ -2272,6 +2319,23 @@ RSpec.describe UsersController do
           expect(user.card_background_upload).to eq(upload)
         end
 
+        it "does not allow updating attributes specific to user creation" do
+          put "/u/#{user.username}.json",
+              params: {
+                username: "jimtom2",
+                email: "newemail@example.com",
+                password: "123456789",
+              }
+
+          expect(response.status).to eq(200)
+
+          user.reload
+
+          expect(user.username).not_to eq "jimtop2"
+          expect(user.password).not_to eq "123456789"
+          expect(user.email).not_to eq "newemail@example.com"
+        end
+
         it "updates watched tags in everyone tag group" do
           SiteSetting.tagging_enabled = true
           tags = [Fabricate(:tag), Fabricate(:tag)]
@@ -2581,9 +2645,10 @@ RSpec.describe UsersController do
             end.to change { user.sidebar_section_links.count }.from(1).to(0)
           end
 
-          it "should allow user to modify category sidebar section links" do
+          it "should allow user to only modify category sidebar section links for categories they have access to" do
             category = Fabricate(:category)
-            restricted_category = Fabricate(:category, read_restricted: true)
+            group = Fabricate(:group)
+            restricted_category = Fabricate(:private_category, group: group)
             category_sidebar_section_link = Fabricate(:category_sidebar_section_link, user: user)
 
             put "/u/#{user.username}.json",
@@ -2598,6 +2663,21 @@ RSpec.describe UsersController do
             sidebar_section_link = user.sidebar_section_links.first
 
             expect(sidebar_section_link.linkable).to eq(category)
+
+            group.add(user)
+
+            expect do
+              put "/u/#{user.username}.json",
+                  params: {
+                    sidebar_category_ids: [category.id, restricted_category.id],
+                  }
+
+              expect(response.status).to eq(200)
+            end.to change { user.sidebar_section_links.count }.from(1).to(2)
+
+            expect(SidebarSectionLink.exists?(user: user, linkable: restricted_category)).to eq(
+              true,
+            )
           end
 
           it "should allow user to remove all tag sidebar section links" do
@@ -2623,15 +2703,18 @@ RSpec.describe UsersController do
             expect(user.reload.sidebar_section_links.count).to eq(0)
           end
 
-          it "should allow user to add tag sidebar section links" do
+          it "should allow user to add tag sidebar section links only for tags that are visible to the user" do
             SiteSetting.tagging_enabled = true
 
             tag = Fabricate(:tag)
             tag_sidebar_section_link = Fabricate(:tag_sidebar_section_link, user: user)
 
+            hidden_tag = Fabricate(:tag)
+            Fabricate(:tag_group, permissions: { "staff" => 1 }, tag_names: [hidden_tag.name])
+
             put "/u/#{user.username}.json",
                 params: {
-                  sidebar_tag_names: [tag.name, "somerandomtag"],
+                  sidebar_tag_names: [tag.name, "somerandomtag", hidden_tag.name],
                 }
 
             expect(response.status).to eq(200)
@@ -2641,6 +2724,19 @@ RSpec.describe UsersController do
             sidebar_section_link = user.sidebar_section_links.first
 
             expect(sidebar_section_link.linkable).to eq(tag)
+
+            user.update!(admin: true)
+
+            expect do
+              put "/u/#{user.username}.json",
+                  params: {
+                    sidebar_tag_names: [tag.name, "somerandomtag", hidden_tag.name],
+                  }
+
+              expect(response.status).to eq(200)
+            end.to change { user.sidebar_section_links.count }.from(1).to(2)
+
+            expect(SidebarSectionLink.exists?(user: user, linkable: hidden_tag)).to eq(true)
           end
         end
       end
@@ -4430,7 +4526,9 @@ RSpec.describe UsersController do
       it "should redirect to login page for anonymous user when profiles are hidden" do
         SiteSetting.hide_user_profiles_from_public = true
         get "/u/#{user.username}.json"
-        expect(response).to redirect_to "/login"
+        expect(response).to have_http_status(:forbidden)
+        get "/u/#{user.username}/messages.json"
+        expect(response).to have_http_status(:forbidden)
       end
 
       describe "user profile views" do
@@ -4633,10 +4731,10 @@ RSpec.describe UsersController do
         expect(parsed["trust_level"]).to be_present
       end
 
-      it "should redirect to login page for anonymous user when profiles are hidden" do
+      it "should have http status 403 for anonymous user when profiles are hidden" do
         SiteSetting.hide_user_profiles_from_public = true
         get "/u/#{user.username}/card.json"
-        expect(response).to redirect_to "/login"
+        expect(response).to have_http_status(:forbidden)
       end
     end
 
@@ -4692,10 +4790,10 @@ RSpec.describe UsersController do
       expect(parsed.map { |u| u["username"] }).to contain_exactly(user.username, user2.username)
     end
 
-    it "should redirect to login page for anonymous user when profiles are hidden" do
+    it "should have http status 403 for anonymous user when profiles are hidden" do
       SiteSetting.hide_user_profiles_from_public = true
       get "/user-cards.json?user_ids=#{user.id},#{user2.id}"
-      expect(response).to redirect_to "/login"
+      expect(response).to have_http_status(:forbidden)
     end
 
     context "when `hide_profile_and_presence` user option is checked" do
@@ -4854,11 +4952,10 @@ RSpec.describe UsersController do
       expect(response.status).to eq(200)
     end
 
-    context "with limit" do
-      it "returns an error if value is invalid" do
-        get "/u/search/users.json", params: { limit: "-1" }
-        expect(response.status).to eq(400)
-      end
+    describe "when limit params is invalid" do
+      include_examples "invalid limit params",
+                       "/u/search/users.json",
+                       described_class::SEARCH_USERS_LIMIT
     end
 
     context "when `enable_names` is true" do
@@ -5444,6 +5541,46 @@ RSpec.describe UsersController do
         expect(response.parsed_body["error"]).to eq(I18n.t("login.missing_second_factor_code"))
       end
     end
+
+    it "doesn't allow creating too many TOTPs" do
+      Fabricate(:user_second_factor_totp, user: user1)
+
+      create_totp
+      staged_totp_key = read_secure_session["staged-totp-#{user1.id}"]
+      token = ROTP::TOTP.new(staged_totp_key).now
+
+      stub_const(UserSecondFactor, "MAX_TOTPS_PER_USER", 1) do
+        post "/users/enable_second_factor_totp.json",
+             params: {
+               name: "test",
+               second_factor_token: token,
+             }
+      end
+
+      expect(response.status).to eq(422)
+      expect(response.parsed_body["errors"]).to include(I18n.t("login.too_many_authenticators"))
+
+      expect(user1.user_second_factors.count).to eq(1)
+    end
+
+    it "doesn't allow the TOTP name to exceed the limit" do
+      create_totp
+      staged_totp_key = read_secure_session["staged-totp-#{user1.id}"]
+      token = ROTP::TOTP.new(staged_totp_key).now
+
+      post "/users/enable_second_factor_totp.json",
+           params: {
+             name: "a" * (UserSecondFactor::MAX_NAME_LENGTH + 1),
+             second_factor_token: token,
+           }
+
+      expect(response.status).to eq(422)
+      expect(response.parsed_body["errors"]).to include(
+        "Name is too long (maximum is 300 characters)",
+      )
+
+      expect(user1.user_second_factors.count).to eq(0)
+    end
   end
 
   describe "#update_second_factor" do
@@ -5610,13 +5747,22 @@ RSpec.describe UsersController do
       create_second_factor_security_key
       secure_session = read_secure_session
       response_parsed = response.parsed_body
-      expect(response_parsed["challenge"]).to eq(Webauthn.challenge(user1, secure_session))
-      expect(response_parsed["rp_id"]).to eq(Webauthn.rp_id(user1, secure_session))
-      expect(response_parsed["rp_name"]).to eq(Webauthn.rp_name(user1, secure_session))
+      expect(response_parsed["challenge"]).to eq(DiscourseWebauthn.challenge(user1, secure_session))
+      expect(response_parsed["rp_id"]).to eq(DiscourseWebauthn.rp_id)
+      expect(response_parsed["rp_name"]).to eq(DiscourseWebauthn.rp_name)
       expect(response_parsed["user_secure_id"]).to eq(
         user1.reload.create_or_fetch_secure_identifier,
       )
-      expect(response_parsed["supported_algorithms"]).to eq(::Webauthn::SUPPORTED_ALGORITHMS)
+      expect(response_parsed["supported_algorithms"]).to eq(
+        ::DiscourseWebauthn::SUPPORTED_ALGORITHMS,
+      )
+    end
+
+    it "doesn't create a challenge if the user has the maximum number allowed of security keys" do
+      Fabricate(:user_security_key_with_random_credential, user: user1)
+      stub_const(UserSecurityKey, "MAX_KEYS_PER_USER", 1) { create_second_factor_security_key }
+      expect(response.status).to eq(422)
+      expect(response.parsed_body["errors"]).to include(I18n.t("login.too_many_security_keys"))
     end
 
     context "if the user has security key credentials already" do
@@ -5647,6 +5793,43 @@ RSpec.describe UsersController do
           valid_security_key_create_post_data[:rawId],
         )
         expect(user1.security_keys.last.name).to eq(valid_security_key_create_post_data[:name])
+      end
+
+      it "doesn't allow creating too many security keys" do
+        simulate_localhost_webauthn_challenge
+        create_second_factor_security_key
+        _response_parsed = response.parsed_body
+
+        Fabricate(:user_security_key_with_random_credential, user: user1)
+
+        stub_const(UserSecurityKey, "MAX_KEYS_PER_USER", 1) do
+          post "/u/register_second_factor_security_key.json",
+               params: valid_security_key_create_post_data
+        end
+
+        expect(response.status).to eq(422)
+        expect(response.parsed_body["errors"]).to include(I18n.t("login.too_many_security_keys"))
+
+        expect(user1.security_keys.count).to eq(1)
+      end
+
+      it "doesn't allow the security key name to exceed the limit" do
+        simulate_localhost_webauthn_challenge
+        create_second_factor_security_key
+        _response_parsed = response.parsed_body
+
+        post "/u/register_second_factor_security_key.json",
+             params:
+               valid_security_key_create_post_data.merge(
+                 name: "a" * (UserSecurityKey::MAX_NAME_LENGTH + 1),
+               )
+
+        expect(response.status).to eq(422)
+        expect(response.parsed_body["errors"]).to include(
+          "Name is too long (maximum is 300 characters)",
+        )
+
+        expect(user1.security_keys.count).to eq(0)
       end
     end
 
@@ -6152,6 +6335,14 @@ RSpec.describe UsersController do
       get "/u/#{user1.username}/bookmarks.json", params: { q: "badsearch" }
       expect(response.status).to eq(200)
       expect(response.parsed_body["bookmarks"]).to eq([])
+    end
+
+    describe "when limit params is invalid" do
+      before { sign_in(user1) }
+
+      include_examples "invalid limit params",
+                       "/u/someusername/bookmarks.json",
+                       described_class::BOOKMARKS_LIMIT
     end
   end
 

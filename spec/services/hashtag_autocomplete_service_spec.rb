@@ -39,6 +39,13 @@ RSpec.describe HashtagAutocompleteService do
         { "topic-composer" => %w[category tag], "awesome-composer" => %w[tag category] },
       )
     end
+
+    it "does not return types which have been disabled" do
+      SiteSetting.tagging_enabled = false
+      expect(HashtagAutocompleteService.contexts_with_ordered_types).to eq(
+        { "topic-composer" => %w[category] },
+      )
+    end
   end
 
   describe ".data_source_icon_map" do
@@ -296,52 +303,12 @@ RSpec.describe HashtagAutocompleteService do
           ],
         )
       end
-    end
-  end
 
-  describe "#lookup_old" do
-    fab!(:tag2) { Fabricate(:tag, name: "fiction-books") }
-
-    it "returns categories and tags in a hash format with the slug and url" do
-      result = service.lookup_old(%w[the-book-club great-books fiction-books])
-      expect(result[:categories]).to eq({ "the-book-club" => "/c/the-book-club/#{category1.id}" })
-      expect(result[:tags]).to eq(
-        {
-          "fiction-books" => "http://test.localhost/tag/fiction-books",
-          "great-books" => "http://test.localhost/tag/great-books",
-        },
-      )
-    end
-
-    it "does not include categories the user cannot access" do
-      category1.update!(read_restricted: true)
-      result = service.lookup_old(%w[the-book-club great-books fiction-books])
-      expect(result[:categories]).to eq({})
-    end
-
-    it "does not include tags the user cannot access" do
-      Fabricate(:tag_group, permissions: { "staff" => 1 }, tag_names: ["great-books"])
-      result = service.lookup_old(%w[the-book-club great-books fiction-books])
-      expect(result[:tags]).to eq({ "fiction-books" => "http://test.localhost/tag/fiction-books" })
-    end
-
-    it "handles tags which have the ::tag suffix" do
-      result = service.lookup_old(%w[the-book-club great-books::tag fiction-books])
-      expect(result[:tags]).to eq(
-        {
-          "fiction-books" => "http://test.localhost/tag/fiction-books",
-          "great-books" => "http://test.localhost/tag/great-books",
-        },
-      )
-    end
-
-    context "when not tagging_enabled" do
-      before { SiteSetting.tagging_enabled = false }
-
-      it "does not return tags" do
-        result = service.lookup_old(%w[the-book-club great-books fiction-books])
-        expect(result[:categories]).to eq({ "the-book-club" => "/c/the-book-club/#{category1.id}" })
-        expect(result[:tags]).to eq({})
+      it "does not error if a type provided for priority order has been disabled" do
+        SiteSetting.tagging_enabled = false
+        expect(service.search(nil, %w[category tag]).map(&:ref)).to eq(
+          %w[book-dome book-zone media book uncategorized the-book-club],
+        )
       end
     end
   end

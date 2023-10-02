@@ -8,7 +8,8 @@ describe Chat::ChannelFetcher do
   fab!(:dm_channel2) { Fabricate(:direct_message) }
   fab!(:direct_message_channel1) { Fabricate(:direct_message_channel, chatable: dm_channel1) }
   fab!(:direct_message_channel2) { Fabricate(:direct_message_channel, chatable: dm_channel2) }
-  fab!(:user1) { Fabricate(:user) }
+  fab!(:chatters) { Fabricate(:group) }
+  fab!(:user1) { Fabricate(:user, group_ids: [chatters.id]) }
   fab!(:user2) { Fabricate(:user) }
 
   def guardian
@@ -18,6 +19,8 @@ describe Chat::ChannelFetcher do
   def memberships
     Chat::UserChatChannelMembership.where(user: user1)
   end
+
+  before { SiteSetting.chat_allowed_groups = [chatters] }
 
   describe ".structured" do
     it "returns open channel only" do
@@ -356,10 +359,12 @@ describe Chat::ChannelFetcher do
       Chat::DirectMessageUser.create!(direct_message: dm_channel2, user: user1)
       Chat::DirectMessageUser.create!(direct_message: dm_channel2, user: user2)
 
-      Fabricate(:chat_message, user: user1, chat_channel: direct_message_channel1)
-      Fabricate(:chat_message, user: user1, chat_channel: direct_message_channel2)
+      dm_1 = Fabricate(:chat_message, user: user1, chat_channel: direct_message_channel1)
+      dm_2 = Fabricate(:chat_message, user: user1, chat_channel: direct_message_channel2)
 
+      direct_message_channel1.update!(last_message: dm_1)
       direct_message_channel1.last_message.update!(created_at: 1.day.ago)
+      direct_message_channel2.update!(last_message: dm_2)
       direct_message_channel2.last_message.update!(created_at: 1.hour.ago)
 
       expect(described_class.secured_direct_message_channels(user1.id, guardian).map(&:id)).to eq(

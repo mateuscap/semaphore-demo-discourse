@@ -12,6 +12,7 @@ Chat::Engine.routes.draw do
     put "/channels/:channel_id" => "channels#update"
     get "/channels/:channel_id" => "channels#show"
     put "/channels/:channel_id/status" => "channels_status#update"
+    get "/channels/:channel_id/messages" => "channel_messages#index"
     post "/channels/:channel_id/messages/moves" => "channels_messages_moves#create"
     post "/channels/:channel_id/archives" => "channels_archives#create"
     get "/channels/:channel_id/memberships" => "channels_memberships#index"
@@ -29,8 +30,10 @@ Chat::Engine.routes.draw do
     get "/mentions/groups" => "hints#check_group_mentions", :format => :json
 
     get "/channels/:channel_id/threads" => "channel_threads#index"
+    post "/channels/:channel_id/threads" => "channel_threads#create"
     put "/channels/:channel_id/threads/:thread_id" => "channel_threads#update"
     get "/channels/:channel_id/threads/:thread_id" => "channel_threads#show"
+    get "/channels/:channel_id/threads/:thread_id/messages" => "channel_thread_messages#index"
     put "/channels/:channel_id/threads/:thread_id/read" => "thread_reads#update"
     put "/channels/:channel_id/threads/:thread_id/notifications-settings/me" =>
           "channel_threads_current_user_notifications_settings#update"
@@ -77,7 +80,7 @@ Chat::Engine.routes.draw do
   put "/user_chat_enabled/:user_id" => "chat#set_user_chat_status"
   put "/:chat_channel_id/invite" => "chat#invite_users"
   post "/drafts" => "chat#set_draft"
-  post "/:chat_channel_id" => "chat#create_message"
+  post "/:chat_channel_id" => "api/channel_messages#create"
   put "/flag" => "chat#flag"
   get "/emojis" => "emojis#index"
 
@@ -93,6 +96,7 @@ Chat::Engine.routes.draw do
   get "/channel/:channel_id", to: redirect("/chat/c/-/%{channel_id}")
 
   get "#{base_c_route}/t/:thread_id" => "chat#respond"
+  get "#{base_c_route}/t/:thread_id/:message_id" => "chat#respond"
 
   base_channel_route = "/channel/:channel_id/:channel_title"
   redirect_base = "/chat/c/%{channel_title}/%{channel_id}"

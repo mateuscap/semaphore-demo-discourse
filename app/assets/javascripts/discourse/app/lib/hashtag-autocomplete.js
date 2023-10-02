@@ -11,7 +11,6 @@ import {
   escapeExpression,
   inCodeBlock,
 } from "discourse/lib/utilities";
-import { search as searchCategoryTag } from "discourse/lib/category-tag-search";
 import { emojiUnescape } from "discourse/lib/text";
 import { htmlSafe } from "@ember/template";
 
@@ -49,6 +48,22 @@ export function decorateHashtags(element, site) {
   });
 }
 
+export function generatePlaceholderHashtagHTML(type, spanEl, data) {
+  // NOTE: When changing the HTML structure here, you must also change
+  // it in the hashtag-autocomplete markdown rule, and vice-versa.
+  const link = document.createElement("a");
+  link.classList.add("hashtag-cooked");
+  link.href = data.relative_url;
+  link.dataset.type = type;
+  link.dataset.id = data.id;
+  link.dataset.slug = data.slug;
+  const hashtagTypeClass = new getHashtagTypeClasses()[type];
+  link.innerHTML = `${hashtagTypeClass.generateIconHTML(
+    data
+  )}<span>${emojiUnescape(data.text)}</span>`;
+  spanEl.replaceWith(link);
+}
+
 /**
  * Sets up a textarea using the jQuery autocomplete plugin, specifically
  * to match on the hashtag (#) character for autocompletion of categories,
@@ -76,16 +91,12 @@ export function setupHashtagAutocomplete(
   siteSettings,
   autocompleteOptions = {}
 ) {
-  if (siteSettings.enable_experimental_hashtag_autocomplete) {
-    _setupExperimental(
-      contextualHashtagConfiguration,
-      $textArea,
-      siteSettings,
-      autocompleteOptions
-    );
-  } else {
-    _setup($textArea, siteSettings, autocompleteOptions.afterComplete);
-  }
+  _setup(
+    contextualHashtagConfiguration,
+    $textArea,
+    siteSettings,
+    autocompleteOptions
+  );
 }
 
 export function hashtagTriggerRule(textarea) {
@@ -147,7 +158,7 @@ export function linkSeenHashtagsInContext(
     .filter((slug) => !checkedHashtags.has(slug));
 }
 
-function _setupExperimental(
+function _setup(
   contextualHashtagConfiguration,
   $textArea,
   siteSettings,
@@ -166,22 +177,6 @@ function _setupExperimental(
         return null;
       }
       return _searchGeneric(term, siteSettings, contextualHashtagConfiguration);
-    },
-    triggerRule: (textarea, opts) => hashtagTriggerRule(textarea, opts),
-  });
-}
-
-function _setup($textArea, siteSettings, afterComplete) {
-  $textArea.autocomplete({
-    template: findRawTemplate("category-tag-autocomplete"),
-    key: "#",
-    afterComplete,
-    transformComplete: (obj) => obj.text,
-    dataSource: (term) => {
-      if (term.match(/\s/)) {
-        return null;
-      }
-      return searchCategoryTag(term, siteSettings);
     },
     triggerRule: (textarea, opts) => hashtagTriggerRule(textarea, opts),
   });
@@ -219,10 +214,6 @@ function _searchGeneric(term, siteSettings, contextualHashtagConfiguration) {
       : discourseLater(() => {
           resolve(CANCELLED_STATUS);
         }, 5000);
-
-    if (!siteSettings.enable_experimental_hashtag_autocomplete && term === "") {
-      return resolve(CANCELLED_STATUS);
-    }
 
     const debouncedSearch = (q, ctx, resultFunc) => {
       discourseDebounce(this, _searchRequest, q, ctx, resultFunc, INPUT_DELAY);
@@ -268,19 +259,7 @@ function _findAndReplaceSeenHashtagPlaceholder(
     // Replace raw span for the hashtag with a cooked one
     const matchingSeenHashtag = seenHashtags[type]?.[slugRef];
     if (matchingSeenHashtag) {
-      // NOTE: When changing the HTML structure here, you must also change
-      // it in the hashtag-autocomplete markdown rule, and vice-versa.
-      const link = document.createElement("a");
-      link.classList.add("hashtag-cooked");
-      link.href = matchingSeenHashtag.relative_url;
-      link.dataset.type = type;
-      link.dataset.id = matchingSeenHashtag.id;
-      link.dataset.slug = matchingSeenHashtag.slug;
-      const hashtagType = new getHashtagTypeClasses()[type];
-      link.innerHTML = `${hashtagType.generateIconHTML(
-        matchingSeenHashtag
-      )}<span>${emojiUnescape(matchingSeenHashtag.text)}</span>`;
-      hashtagSpan.replaceWith(link);
+      generatePlaceholderHashtagHTML(type, hashtagSpan, matchingSeenHashtag);
     }
   });
 }

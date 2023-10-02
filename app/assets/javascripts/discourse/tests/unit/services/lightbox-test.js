@@ -6,7 +6,7 @@ import { module, test } from "qunit";
 import { click } from "@ember/test-helpers";
 import { LIGHTBOX_APP_EVENT_NAMES } from "discourse/lib/lightbox/constants";
 import domFromString from "discourse-common/lib/dom-from-string";
-import { getOwner } from "discourse-common/lib/get-owner";
+import { getOwner } from "@ember/application";
 import { setupTest } from "ember-qunit";
 import sinon from "sinon";
 
@@ -60,8 +60,9 @@ module("Unit | Service | Experimental Lightbox", function (hooks) {
 
     const openLightboxSpy = sinon.spy(this.lightbox, "openLightbox");
     const removeEventListenerSpy = sinon.spy(container, "removeEventListener");
+    const clickTarget = container.querySelector(selector);
 
-    await this.lightbox.setupLightboxes({ container, selector });
+    await this.lightbox.setupLightboxes({ container, selector, clickTarget });
 
     await click(container.querySelector(selector));
 
@@ -70,7 +71,7 @@ module("Unit | Service | Experimental Lightbox", function (hooks) {
     await click(container.querySelector("p"));
 
     assert.strictEqual(
-      openLightboxSpy.calledWith({ container, selector }),
+      openLightboxSpy.calledWith({ container, selector, clickTarget }),
       true,
       "calls openLightbox on lightboxed element click"
     );

@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
 describe TopicSummarization do
-  fab!(:topic) { Fabricate(:topic) }
   fab!(:user) { Fabricate(:admin) }
-  fab!(:post_1) { Fabricate(:post, topic: topic) }
-  fab!(:post_2) { Fabricate(:post, topic: topic) }
+  fab!(:topic) { Fabricate(:topic, highest_post_number: 2) }
+  fab!(:post_1) { Fabricate(:post, topic: topic, post_number: 1) }
+  fab!(:post_2) { Fabricate(:post, topic: topic, post_number: 2) }
 
   shared_examples "includes only public-visible topics" do
     subject { described_class.new(DummyCustomSummarization.new({})) }
@@ -147,30 +147,55 @@ describe TopicSummarization do
         cached_summary.update!(summarized_text: cached_text, created_at: 24.hours.ago)
       end
 
-      context "when the summary targets changed" do
-        before { cached_summary.update!(content_range: (1..1)) }
+      context "when the user can requests new summaries" do
+        context "when there are no new posts" do
+          it "returns the cached summary" do
+            section = summarization.summarize(topic, user)
 
-        it "deletes existing summaries and create a new one" do
-          section = summarization.summarize(topic, user)
-
-          expect(section.summarized_text).to eq(summarized_text)
+            expect(section.summarized_text).to eq(cached_text)
+          end
         end
 
-        it "does nothing if the last summary is less than 12 hours old" do
-          cached_summary.update!(created_at: 6.hours.ago)
+        context "when there are new posts" do
+          before { cached_summary.update!(original_content_sha: "outdated_sha") }
 
-          section = summarization.summarize(topic, user)
+          it "returns a new summary" do
+            section = summarization.summarize(topic, user)
 
-          expect(section.summarized_text).to eq(cached_text)
+            expect(section.summarized_text).to eq(summarized_text)
+          end
+
+          context "when the cached summary is less than one hour old" do
+            before { cached_summary.update!(created_at: 30.minutes.ago) }
+
+            it "returns the cached summary" do
+              cached_summary.update!(created_at: 30.minutes.ago)
+
+              section = summarization.summarize(topic, user)
+
+              expect(section.summarized_text).to eq(cached_text)
+              expect(section.outdated).to eq(true)
+            end
+
+            it "returns a new summary if the skip_age_check flag is passed" do
+              section = summarization.summarize(topic, user, skip_age_check: true)
+
+              expect(section.summarized_text).to eq(summarized_text)
+            end
+          end
         end
       end
+    end
 
-      context "when the summary targets are still the same" do
-        it "doesn't create a new summary" do
-          section = summarization.summarize(topic, user)
+    describe "stream partial updates" do
+      let(:summary) { { summary: "This is the final summary", chunks: [] } }
 
-          expect(section.summarized_text).to eq(cached_text)
-        end
+      it "receives a blk that is passed to the underlying strategy and called with partial summaries" do
+        partial_result = nil
+
+        summarization.summarize(topic, user) { |partial_summary| partial_result = partial_summary }
+
+        expect(partial_result).to eq(summary[:summary])
       end
     end
   end

@@ -3,7 +3,7 @@ import EmberObject from "@ember/object";
 import discourseComputed from "discourse-common/utils/decorators";
 import { withPluginApi } from "discourse/lib/plugin-api";
 import { setupTest } from "ember-qunit";
-import { getOwner } from "discourse-common/lib/get-owner";
+import { getOwner } from "@ember/application";
 
 module("Unit | Utility | plugin-api", function (hooks) {
   setupTest(hooks);
@@ -105,6 +105,8 @@ module("Unit | Utility | plugin-api", function (hooks) {
     // This puts things in a state which will trigger https://github.com/emberjs/ember.js/issues/18860 when a native getter is overridden.
     withPluginApi("1.1.0", (api) => {
       api.modifyClass("test-class:main", {
+        pluginId: "plugin-api-test",
+
         get foo() {
           return "modified getter";
         },

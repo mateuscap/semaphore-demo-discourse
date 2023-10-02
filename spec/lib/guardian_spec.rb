@@ -98,6 +98,38 @@ RSpec.describe Guardian do
     fab!(:user) { Fabricate(:user) }
     fab!(:post) { Fabricate(:post) }
 
+    describe "an anonymous user" do
+      before { SiteSetting.allow_anonymous_posting = true }
+
+      context "when allow_anonymous_likes is enabled" do
+        before { SiteSetting.allow_anonymous_likes = true }
+
+        it "returns true when liking" do
+          expect(Guardian.new(anonymous_user).post_can_act?(post, :like)).to be_truthy
+        end
+
+        it "cannot perform any other action" do
+          expect(Guardian.new(anonymous_user).post_can_act?(post, :flag)).to be_falsey
+          expect(Guardian.new(anonymous_user).post_can_act?(post, :bookmark)).to be_falsey
+          expect(Guardian.new(anonymous_user).post_can_act?(post, :notify_user)).to be_falsey
+        end
+      end
+
+      context "when allow_anonymous_likes is disabled" do
+        before { SiteSetting.allow_anonymous_likes = false }
+
+        it "returns false when liking" do
+          expect(Guardian.new(anonymous_user).post_can_act?(post, :like)).to be_falsey
+        end
+
+        it "cannot perform any other action" do
+          expect(Guardian.new(anonymous_user).post_can_act?(post, :flag)).to be_falsey
+          expect(Guardian.new(anonymous_user).post_can_act?(post, :bookmark)).to be_falsey
+          expect(Guardian.new(anonymous_user).post_can_act?(post, :notify_user)).to be_falsey
+        end
+      end
+    end
+
     it "returns false when the user is nil" do
       expect(Guardian.new(nil).post_can_act?(post, :like)).to be_falsey
     end
@@ -1510,6 +1542,11 @@ RSpec.describe Guardian do
       SiteSetting.personal_message_enabled_groups = Group::AUTO_GROUPS[:trust_level_4]
       expect(Guardian.new(user).can_convert_topic?(topic)).to be_falsey
     end
+
+    it "returns true if user is not in personal_message_enabled_groups but they are still admin" do
+      SiteSetting.personal_message_enabled_groups = Group::AUTO_GROUPS[:trust_level_4]
+      expect(Guardian.new(admin).can_convert_topic?(topic)).to be_truthy
+    end
   end
 
   describe "can_edit?" do
@@ -2439,6 +2476,122 @@ RSpec.describe Guardian do
 
       it "returns true if it's yours" do
         expect(Guardian.new(user).can_delete?(post_action)).to be_truthy
+      end
+    end
+  end
+
+  describe "#can_delete_post_action" do
+    before do
+      SiteSetting.allow_anonymous_posting = true
+      Guardian.any_instance.stubs(:anonymous?).returns(true)
+    end
+
+    context "with allow_anonymous_likes enabled" do
+      before { SiteSetting.allow_anonymous_likes = true }
+      describe "an anonymous user" do
+        let(:post_action) do
+          user.id = anonymous_user.id
+          post.id = 1
+
+          a =
+            PostAction.new(
+              user: anonymous_user,
+              post: post,
+              post_action_type_id: PostActionType.types[:like],
+            )
+          a.created_at = 1.minute.ago
+          a
+        end
+
+        let(:non_like_post_action) do
+          user.id = anonymous_user.id
+          post.id = 1
+
+          a =
+            PostAction.new(
+              user: anonymous_user,
+              post: post,
+              post_action_type_id: PostActionType.types[:reply],
+            )
+          a.created_at = 1.minute.ago
+          a
+        end
+
+        let(:other_users_post_action) do
+          user.id = user.id
+          post.id = 1
+
+          a =
+            PostAction.new(user: user, post: post, post_action_type_id: PostActionType.types[:like])
+          a.created_at = 1.minute.ago
+          a
+        end
+
+        it "returns true if the post belongs to the anonymous user" do
+          expect(Guardian.new(anonymous_user).can_delete_post_action?(post_action)).to be_truthy
+        end
+
+        it "return false if the post belongs to another user" do
+          expect(
+            Guardian.new(anonymous_user).can_delete_post_action?(other_users_post_action),
+          ).to be_falsey
+        end
+
+        it "returns false for any other action" do
+          expect(
+            Guardian.new(anonymous_user).can_delete_post_action?(non_like_post_action),
+          ).to be_falsey
+        end
+
+        it "returns false if the window has expired" do
+          post_action.created_at = 20.minutes.ago
+          SiteSetting.post_undo_action_window_mins = 10
+
+          expect(Guardian.new(anonymous_user).can_delete?(post_action)).to be_falsey
+        end
+      end
+    end
+
+    context "with allow_anonymous_likes disabled" do
+      before do
+        SiteSetting.allow_anonymous_likes = false
+        SiteSetting.allow_anonymous_posting = true
+      end
+      describe "an anonymous user" do
+        let(:post_action) do
+          user.id = anonymous_user.id
+          post.id = 1
+
+          a =
+            PostAction.new(
+              user: anonymous_user,
+              post: post,
+              post_action_type_id: PostActionType.types[:like],
+            )
+          a.created_at = 1.minute.ago
+          a
+        end
+
+        let(:non_like_post_action) do
+          user.id = anonymous_user.id
+          post.id = 1
+
+          a =
+            PostAction.new(
+              user: anonymous_user,
+              post: post,
+              post_action_type_id: PostActionType.types[:reply],
+            )
+          a.created_at = 1.minute.ago
+          a
+        end
+
+        it "any action returns false" do
+          expect(Guardian.new(anonymous_user).can_delete_post_action?(post_action)).to be_falsey
+          expect(
+            Guardian.new(anonymous_user).can_delete_post_action?(non_like_post_action),
+          ).to be_falsey
+        end
       end
     end
   end
@@ -4241,7 +4394,7 @@ RSpec.describe Guardian do
 
     context "when attempting to destroy your own reviewable" do
       it "returns true" do
-        queued_post = Fabricate(:reviewable_queued_post, created_by: user)
+        queued_post = Fabricate(:reviewable_queued_post, target_created_by: user)
         env =
           create_request_env(path: "/review/#{queued_post.id}.json").merge(
             { "REQUEST_METHOD" => "DELETE" },

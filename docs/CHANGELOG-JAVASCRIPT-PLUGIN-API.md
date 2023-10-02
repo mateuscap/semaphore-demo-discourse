@@ -7,6 +7,55 @@ in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.0] - 2023-09-06
+
+### Added
+
+- Adds `addPostAdminMenuButton` which allows to register a new button in the post admin menu.
+
+## [1.11.0] - 2023-08-30
+
+### Added
+
+- Adds `addBeforeAuthCompleteCallback` which allows plugins and themes to add functions to be
+  evaluated before the auth-complete logic is run. If any of these callbacks return false, the
+  auth-complete logic will be aborted.
+
+## [1.10.0] - 2023-08-25
+
+### Added
+
+- Adds `registerReviewableActionModal` which allows core and plugins to register a modal component class
+  which is used to show a modal for certain reviewable actions.
+
+## [1.9.0] - 2023-08-09
+
+### Added
+
+- Adds `showSidebarSwitchPanelButtons` which is experimental, and allows plugins to show sidebar switch panel buttons in separated mode
+
+- Adds `hideSidebarSwitchPanelButtons` which is experimental, and allows plugins to hide sidebar switch panel buttons in separated mode
+
+## [1.8.1] - 2023-08-08
+
+### Added
+
+- Adds `replacePostMenuButton` which allows plugins to replace a post menu button with a widget.
+
+## [1.8.0] - 2023-07-18
+
+### Added
+- Adds `addSidebarPanel` which is experimental, and adds a Sidebar panel by returning a class which extends from the
+  BaseCustomSidebarPanel class.
+
+- Adds `setSidebarPanel` which is experimental, and sets the current sidebar panel.
+
+## [1.7.1] - 2023-07-18
+
+### Added
+
+- Adds `addBulkActionButton` which adds actions to the Bulk Topic modal
+
 ## [1.7.0] - 2023-07-17
 
 ### Added

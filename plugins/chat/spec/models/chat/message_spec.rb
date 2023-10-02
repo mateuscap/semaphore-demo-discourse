@@ -7,6 +7,12 @@ describe Chat::Message do
 
   it { is_expected.to have_many(:chat_mentions).dependent(:destroy) }
 
+  describe "validations" do
+    subject(:message) { described_class.new(message: "") }
+
+    it { is_expected.to validate_length_of(:cooked).is_at_most(20_000) }
+  end
+
   describe ".cook" do
     it "does not support HTML tags" do
       cooked = described_class.cook("<h1>test</h1>")
@@ -228,22 +234,8 @@ describe Chat::Message do
       expect(cooked).to eq("<p><span class=\"mention\">@mention</span></p>")
     end
 
-    it "supports category-hashtag plugin" do
-      # TODO (martin) Remove when enable_experimental_hashtag_autocomplete is default for all sites
-      SiteSetting.enable_experimental_hashtag_autocomplete = false
-
-      category = Fabricate(:category)
-
-      cooked = described_class.cook("##{category.slug}")
-
-      expect(cooked).to eq(
-        "<p><a class=\"hashtag\" href=\"#{category.url}\">#<span>#{category.slug}</span></a></p>",
-      )
-    end
-
     it "supports hashtag autocomplete" do
       SiteSetting.chat_enabled = true
-      SiteSetting.enable_experimental_hashtag_autocomplete = true
 
       category = Fabricate(:category)
       user = Fabricate(:user)
@@ -293,8 +285,7 @@ describe Chat::Message do
     it "excerpts upload file name if message is empty" do
       gif =
         Fabricate(:upload, original_filename: "cat.gif", width: 400, height: 300, extension: "gif")
-      message = Fabricate(:chat_message, message: "")
-      message.attach_uploads([gif])
+      message = Fabricate(:chat_message, message: "", uploads: [gif])
 
       expect(message.excerpt).to eq "cat.gif"
     end
@@ -377,7 +368,7 @@ describe Chat::Message do
         )
       image2 =
         Fabricate(:upload, original_filename: "meme.jpg", width: 10, height: 10, extension: "jpg")
-      message.attach_uploads([image, image2])
+      message.uploads = [image, image2]
       expect(message.to_markdown).to eq(<<~MSG.chomp)
       hey friend, what's up?!
 
@@ -410,7 +401,7 @@ describe Chat::Message do
       Fabricate(:chat_message, message: "this is duplicate", chat_channel: channel, user: user1)
       message =
         described_class.new(message: "this is duplicate", chat_channel: channel, user: user2)
-      message.validate_message(has_uploads: false)
+      message.valid?
       expect(message.errors.full_messages).to include(I18n.t("chat.errors.duplicate_message"))
     end
   end
@@ -505,7 +496,6 @@ describe Chat::Message do
 
       before do
         SiteSetting.chat_enabled = true
-        SiteSetting.enable_experimental_hashtag_autocomplete = true
         SiteSetting.suppress_secured_categories_from_admin = true
       end
 
@@ -523,30 +513,6 @@ describe Chat::Message do
         chat_message.rebake!
         expect(chat_message.reload.cooked).to include(secure_category.name)
       end
-    end
-  end
-
-  describe "#attach_uploads" do
-    fab!(:chat_message) { Fabricate(:chat_message) }
-    fab!(:upload_1) { Fabricate(:upload) }
-    fab!(:upload_2) { Fabricate(:upload) }
-
-    it "creates an UploadReference record for the provided uploads" do
-      chat_message.attach_uploads([upload_1, upload_2])
-      upload_references = UploadReference.where(upload_id: [upload_1, upload_2])
-      expect(upload_references.count).to eq(2)
-      expect(upload_references.map(&:target_id).uniq).to eq([chat_message.id])
-      expect(upload_references.map(&:target_type).uniq).to eq([described_class.polymorphic_name])
-    end
-
-    it "does nothing if the message record is new" do
-      expect { described_class.new.attach_uploads([upload_1, upload_2]) }.to not_change {
-        UploadReference.count
-      }
-    end
-
-    it "does nothing for an empty uploads array" do
-      expect { chat_message.attach_uploads([]) }.to not_change { UploadReference.count }
     end
   end
 
@@ -621,6 +587,20 @@ describe Chat::Message do
 
       expect(message.chat_mentions.pluck(:user_id)).to match_array(already_mentioned)
       expect(message.chat_mentions.pluck(:id)).to include(*existing_mention_ids) # the mentions weren't recreated
+    end
+  end
+
+  describe "#url" do
+    it "returns message permalink" do
+      expect(message.url).to eq("/chat/c/-/#{message.chat_channel_id}/#{message.id}")
+    end
+
+    it "returns message permalink when in thread" do
+      thread = Fabricate(:chat_thread)
+      first_message = thread.chat_messages.first
+      expect(first_message.url).to eq(
+        "/chat/c/-/#{first_message.chat_channel_id}/t/#{first_message.thread_id}/#{first_message.id}",
+      )
     end
   end
 end

@@ -35,13 +35,6 @@
         <ChatComposerDropdown
           @buttons={{this.dropdownButtons}}
           @isDisabled={{this.disabled}}
-          @hasActivePanel={{eq
-            this.chatEmojiPickerManager.picker.context
-            this.context
-          }}
-          @onCloseActivePanel={{this.chatEmojiPickerManager.close}}
-          {{on "focus" (fn this.computeIsFocused true)}}
-          {{on "blur" (fn this.computeIsFocused false)}}
         />
 
         <div
@@ -96,6 +89,7 @@
           disabled={{or this.disabled (not this.sendEnabled)}}
           tabindex={{if this.sendEnabled 0 -1}}
           {{on "click" this.onSend}}
+          {{on "mousedown" this.trapMouseDown}}
           {{on "focus" (fn this.computeIsFocused true)}}
           {{on "blur" (fn this.computeIsFocused false)}}
         />

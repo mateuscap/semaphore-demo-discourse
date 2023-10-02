@@ -1,9 +1,10 @@
+import QUnit, { module, test } from "qunit";
+import { setupTest } from "ember-qunit";
 import PrettyText, { buildOptions } from "pretty-text/pretty-text";
 import {
   applyCachedInlineOnebox,
   deleteCachedInlineOnebox,
 } from "pretty-text/inline-oneboxer";
-import QUnit, { module, test } from "qunit";
 import { deepMerge } from "discourse-common/lib/object";
 import { extractDataAttribute } from "pretty-text/engines/discourse-markdown-it";
 import { registerEmoji } from "pretty-text/emoji";
@@ -53,7 +54,9 @@ QUnit.assert.cookedPara = function (input, expected, message) {
   QUnit.assert.cooked(input, `<p>${expected}</p>`, message);
 };
 
-module("Unit | Utility | pretty-text", function () {
+module("Unit | Utility | pretty-text", function (hooks) {
+  setupTest(hooks);
+
   test("buildOptions", function (assert) {
     assert.ok(
       buildOptions({ siteSettings: { enable_emoji: true } }).discourse.features
@@ -640,73 +643,6 @@ eviltrout</p>
       "@eviltrout",
       { siteSettings: { enable_mentions: false } },
       "<p>@eviltrout</p>"
-    );
-  });
-
-  test("Category hashtags", function (assert) {
-    const alwaysTrue = {
-      categoryHashtagLookup: function () {
-        return [
-          "http://test.discourse.org/category-hashtag",
-          "category-hashtag",
-        ];
-      },
-    };
-
-    assert.cookedOptions(
-      "Check out #category-hashtag",
-      alwaysTrue,
-      '<p>Check out <a class="hashtag" href="http://test.discourse.org/category-hashtag">#<span>category-hashtag</span></a></p>',
-      "it translates category hashtag into links"
-    );
-
-    assert.cooked(
-      "Check out #category-hashtag",
-      '<p>Check out <span class="hashtag">#category-hashtag</span></p>',
-      "it does not translate category hashtag into links if it is not a valid category hashtag"
-    );
-
-    assert.cookedOptions(
-      "[#category-hashtag](http://www.test.com)",
-      alwaysTrue,
-      '<p><a href="http://www.test.com">#category-hashtag</a></p>',
-      "it does not translate category hashtag within links"
-    );
-
-    assert.cooked(
-      "```\n# #category-hashtag\n```",
-      '<pre><code class="lang-auto"># #category-hashtag\n</code></pre>',
-      "it does not translate category hashtags to links in code blocks"
-    );
-
-    assert.cooked(
-      "># #category-hashtag\n",
-      '<blockquote>\n<h1><span class="hashtag">#category-hashtag</span></h1>\n</blockquote>',
-      "it handles category hashtags in simple quotes"
-    );
-
-    assert.cooked(
-      "# #category-hashtag",
-      '<h1><a name="category-hashtag-1" class="anchor" href="#category-hashtag-1"></a><span class="hashtag">#category-hashtag</span></h1>',
-      "it works within ATX-style headers"
-    );
-
-    assert.cooked(
-      "don't `#category-hashtag`",
-      "<p>don't <code>#category-hashtag</code></p>",
-      "it does not mention in an inline code block"
-    );
-
-    assert.cooked(
-      "<small>#category-hashtag</small>",
-      '<p><small><span class="hashtag">#category-hashtag</span></small></p>',
-      "it works between HTML tags"
-    );
-
-    assert.cooked(
-      "Checkout #ụdị",
-      '<p>Checkout <span class="hashtag">#ụdị</span></p>',
-      "it works for non-english characters"
     );
   });
 

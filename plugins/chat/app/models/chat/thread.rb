@@ -11,7 +11,10 @@ module Chat
 
     belongs_to :channel, foreign_key: "channel_id", class_name: "Chat::Channel"
     belongs_to :original_message_user, foreign_key: "original_message_user_id", class_name: "User"
-    belongs_to :original_message, foreign_key: "original_message_id", class_name: "Chat::Message"
+    belongs_to :original_message,
+               -> { with_deleted },
+               foreign_key: "original_message_id",
+               class_name: "Chat::Message"
 
     has_many :chat_messages,
              -> {
@@ -27,6 +30,9 @@ module Chat
                class_name: "Chat::Message",
                foreign_key: :last_message_id,
                optional: true
+    def last_message
+      super || NullMessage.new
+    end
 
     enum :status, { open: 0, read_only: 1, closed: 2, archived: 3 }, scopes: false
 
@@ -108,7 +114,6 @@ module Chat
     end
 
     def self.ensure_consistency!
-      return if !SiteSetting.enable_experimental_chat_threaded_discussions
       update_counts
     end
 

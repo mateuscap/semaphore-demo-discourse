@@ -48,6 +48,9 @@
     align-items: center;
     height: 100%;
     animation: fadein 0.5s;
+    @media (prefers-reduced-motion) {
+      animation-duration: 0s;
+    }
     // min-width acts as a placeholder if the small logo takes a while to load
     // it prevents topic title from shifting after the small logo loads
     // it's set to match the #site-logo height so square small logos don't resize when titles dock
@@ -201,34 +204,6 @@
   .notifications {
     position: relative;
   }
-  .ring {
-    position: absolute;
-    top: -11px;
-    right: 23.5px;
-    z-index: z("base");
-    margin-left: 0;
-    border-radius: 100%;
-    width: 20px;
-    height: 20px;
-    box-shadow: 0 0 0 rgba(var(--success-rgb), 1);
-    transform: scale(1);
-    transform-origin: center;
-    animation-iteration-count: infinite;
-    animation-duration: 3s;
-    animation-name: ping;
-
-    &.revamped {
-      right: -4px;
-      top: -6px;
-
-      &.regular-notifications {
-        background: radial-gradient(
-          transparent,
-          var(--tertiary-med-or-tertiary)
-        );
-      }
-    }
-  }
   .header-dropdown-toggle {
     position: relative;
   }
@@ -259,8 +234,7 @@
   .unread-notifications {
     background-color: var(--tertiary-med-or-tertiary);
   }
-  .unread-high-priority-notifications,
-  .ring {
+  .unread-high-priority-notifications {
     left: auto;
     right: 25px;
   }
@@ -305,6 +279,9 @@
     overflow: hidden;
     width: 100%;
     animation: fadein 0.5s;
+    @media (prefers-reduced-motion) {
+      animation-duration: 0s;
+    }
   }
   .title-wrapper {
     display: grid;
@@ -446,11 +423,10 @@ $mobile-avatar-height: 1.532em;
 }
 
 .d-header-mode .bootstrap-mode {
-  border-radius: 2em;
   color: var(--primary-medium);
   font-size: var(--font-down-1);
-  margin-left: 0.5em;
-  padding: 0.25em 0.5em;
+  margin-left: 1em;
+  padding: 0.15em 0.5em;
 
   &:focus {
     background-color: var(--primary-medium);

@@ -1,6 +1,11 @@
 import I18n from "I18n";
 
-export default function prepareFormTemplateData(form) {
+export default function prepareFormTemplateData(form, formTemplate) {
+  const labelMap = formTemplate.reduce((acc, field) => {
+    acc[field.id] = field.attributes.label;
+    return acc;
+  }, {});
+
   const formData = new FormData(form);
 
   // Validate the form template
@@ -36,7 +41,7 @@ export default function prepareFormTemplateData(form) {
     const key = Object.keys(item)[0];
     const value = item[key];
     if (value) {
-      return `### ${key}\n${value}`;
+      return `### ${labelMap[key]}\n${value}`;
     }
   });
 
@@ -109,19 +114,19 @@ function _showErrorMessage(field, element) {
     _showErrorByType(element, field, prefix, types);
   } else if (field.validity.tooShort) {
     element.textContent = I18n.t("form_templates.errors.tooShort", {
-      minLength: field.minLength,
+      count: field.minLength,
     });
   } else if (field.validity.tooLong) {
     element.textContent = I18n.t("form_templates.errors.tooLong", {
-      maxLength: field.maxLength,
+      count: field.maxLength,
     });
   } else if (field.validity.rangeOverflow) {
     element.textContent = I18n.t("form_templates.errors.rangeOverflow", {
-      max: field.max,
+      count: field.max,
     });
   } else if (field.validity.rangeUnderflow) {
     element.textContent = I18n.t("form_templates.errors.rangeUnderflow", {
-      min: field.min,
+      count: field.min,
     });
   } else if (field.validity.patternMismatch) {
     element.textContent = I18n.t("form_templates.errors.patternMismatch");

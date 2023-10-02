@@ -129,18 +129,20 @@ html.composer-open {
       align-items: center;
       width: auto;
       max-width: 100%;
+      min-width: 0; // allows shrinking when needed
 
       .action-title {
         display: flex;
         align-items: center;
         line-height: normal;
-        @include ellipsis;
-      }
+        min-width: 0;
 
-      .topic-link,
-      .user-link,
-      .post-link {
-        margin-right: 8px;
+        .topic-link,
+        .user-link,
+        .post-link {
+          margin-right: 8px;
+          @include ellipsis;
+        }
       }
 
       .username {
@@ -315,6 +317,8 @@ html.composer-open {
 
   .category-input + .mini-tag-chooser {
     margin-left: 8px;
+    width: auto;
+    max-width: calc(50% - 4px);
   }
 
   .mini-tag-chooser {

@@ -3,9 +3,11 @@
 RSpec.describe "Chat | composer | thread", type: :system, js: true do
   fab!(:channel_1) { Fabricate(:chat_channel, threading_enabled: true) }
   fab!(:current_user) { Fabricate(:admin) }
-  fab!(:message_1) { Fabricate(:chat_message, chat_channel: channel_1, user: current_user) }
+  fab!(:message_1) do
+    Fabricate(:chat_message, chat_channel: channel_1, user: current_user, use_service: true)
+  end
   fab!(:message_2) do
-    Fabricate(:chat_message, chat_channel: channel_1, user: current_user, in_reply_to: message_1)
+    Fabricate(:chat_message, user: current_user, in_reply_to: message_1, use_service: true)
   end
 
   let(:chat_page) { PageObjects::Pages::Chat.new }
@@ -13,7 +15,6 @@ RSpec.describe "Chat | composer | thread", type: :system, js: true do
   let(:thread_page) { PageObjects::Pages::ChatThread.new }
 
   before do
-    SiteSetting.enable_experimental_chat_threaded_discussions = true
     chat_system_bootstrap
     channel_1.add(current_user)
     sign_in(current_user)

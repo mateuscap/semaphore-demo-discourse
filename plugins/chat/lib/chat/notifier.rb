@@ -158,23 +158,14 @@ module Chat
     end
 
     def group_users_to_notify(users)
-      potential_participants, unreachable =
-        users.partition do |user|
-          guardian = Guardian.new(user)
-          guardian.can_chat? && guardian.can_join_chat_channel?(@chat_channel)
-        end
+      potential_members, unreachable =
+        users.partition { |user| user.guardian.can_join_chat_channel?(@chat_channel) }
 
-      participants, welcome_to_join =
-        potential_participants.partition do |participant|
-          participant.user_chat_channel_memberships.any? do |m|
-            predicate = m.chat_channel_id == @chat_channel.id
-            predicate = predicate && m.following == true if @chat_channel.public_channel?
-            predicate
-          end
-        end
+      members, welcome_to_join =
+        potential_members.partition { |user| @chat_channel.joined_by?(user) }
 
       {
-        already_participating: participants || [],
+        members: members || [],
         welcome_to_join: welcome_to_join || [],
         unreachable: unreachable || [],
       }
@@ -194,7 +185,7 @@ module Chat
 
       grouped = group_users_to_notify(direct_mentions)
 
-      to_notify[:direct_mentions] = grouped[:already_participating].map(&:id)
+      to_notify[:direct_mentions] = grouped[:members].map(&:id)
       inaccessible[:welcome_to_join] = grouped[:welcome_to_join]
       inaccessible[:unreachable] = grouped[:unreachable]
       already_covered_ids.concat(to_notify[:direct_mentions])
@@ -214,7 +205,7 @@ module Chat
       @parsed_mentions.groups_to_mention.each { |g| to_notify[g.name.downcase] = [] }
 
       grouped = group_users_to_notify(reached_by_group)
-      grouped[:already_participating].each do |user|
+      grouped[:members].each do |user|
         # When a user is a member of multiple mentioned groups,
         # the most far to the left should take precedence.
         ordered_group_names =
@@ -234,21 +225,107 @@ module Chat
     end
 
     def notify_creator_of_inaccessible_mentions(inaccessible)
-      group_mentions_disabled = @parsed_mentions.groups_with_disabled_mentions.to_a
-      too_many_members = @parsed_mentions.groups_with_too_many_members.to_a
-      if inaccessible.values.all?(&:blank?) && group_mentions_disabled.empty? &&
-           too_many_members.empty?
-        return
+      # Notify when mentioned users can join channel, but don't have a membership
+      if inaccessible[:welcome_to_join].any?
+        publish_inaccessible_mentions(inaccessible[:welcome_to_join])
       end
 
-      Chat::Publisher.publish_inaccessible_mentions(
-        @user.id,
-        @chat_message,
-        inaccessible[:unreachable].to_a,
-        inaccessible[:welcome_to_join].to_a,
-        too_many_members,
-        group_mentions_disabled,
+      # Notify when mentioned users are not able to access the channel
+      publish_unreachable_mentions(inaccessible[:unreachable]) if inaccessible[:unreachable].any?
+
+      # Notify when `@all` or `@here` is used when channel has global mentions disabled
+      publish_global_mentions_disabled if global_mentions_disabled
+
+      # Notify when groups are mentioned and have mentions disabled
+      group_mentions_disabled = @parsed_mentions.groups_with_disabled_mentions.to_a
+      publish_group_mentions_disabled(group_mentions_disabled) if group_mentions_disabled.any?
+
+      # Notify when large groups are mentioned, exceeding `max_users_notified_per_group_mention`
+      too_many_members = @parsed_mentions.groups_with_too_many_members.to_a
+      publish_too_many_members_in_group_mention(too_many_members) if too_many_members.any?
+    end
+
+    def publish_inaccessible_mentions(users)
+      Chat::Publisher.publish_notice(
+        user_id: @user.id,
+        channel_id: @chat_channel.id,
+        type: "mention_without_membership",
+        data: {
+          user_ids: users.map(&:id),
+          text:
+            mention_warning_text(
+              single: "chat.mention_warning.without_membership",
+              multiple: "chat.mention_warning.without_membership_multiple",
+              first_identifier: users.first.username,
+              count: users.count,
+            ),
+          message_id: @chat_message.id,
+        },
       )
+    end
+
+    def publish_group_mentions_disabled(groups)
+      Chat::Publisher.publish_notice(
+        user_id: @user.id,
+        channel_id: @chat_channel.id,
+        text_content:
+          mention_warning_text(
+            single: "chat.mention_warning.group_mentions_disabled",
+            multiple: "chat.mention_warning.group_mentions_disabled_multiple",
+            first_identifier: groups.first.name,
+            count: groups.count,
+          ),
+      )
+    end
+
+    def publish_global_mentions_disabled
+      Chat::Publisher.publish_notice(
+        user_id: @user.id,
+        channel_id: @chat_channel.id,
+        text_content: I18n.t("chat.mention_warning.global_mentions_disallowed"),
+      )
+    end
+
+    def publish_unreachable_mentions(users)
+      Chat::Publisher.publish_notice(
+        user_id: @user.id,
+        channel_id: @chat_channel.id,
+        text_content:
+          mention_warning_text(
+            single: "chat.mention_warning.cannot_see",
+            multiple: "chat.mention_warning.cannot_see_multiple",
+            first_identifier: users.first.username,
+            count: users.count,
+          ),
+      )
+    end
+
+    def publish_too_many_members_in_group_mention(groups)
+      Chat::Publisher.publish_notice(
+        user_id: @user.id,
+        channel_id: @chat_channel.id,
+        text_content:
+          mention_warning_text(
+            single: "chat.mention_warning.too_many_members",
+            multiple: "chat.mention_warning.too_many_members_multiple",
+            first_identifier: groups.first.name,
+            count: groups.count,
+          ),
+      )
+    end
+
+    def mention_warning_text(single:, multiple:, first_identifier:, count:)
+      translation_key = count == 1 ? single : multiple
+      I18n.t(translation_key, first_identifier: first_identifier, count: count - 1)
+    end
+
+    def global_mentions_disabled
+      return @global_mentions_disabled if defined?(@global_mentions_disabled)
+
+      @global_mentions_disabled =
+        (@parsed_mentions.has_global_mention || @parsed_mentions.has_here_mention) &&
+          !@chat_channel.allow_channel_wide_mentions
+      @global_mentions_disabled
     end
 
     # Filters out users from global, here, group, and direct mentions that are

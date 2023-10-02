@@ -26,7 +26,7 @@ import { ajax } from "discourse/lib/ajax";
 import deprecated from "discourse-common/lib/deprecated";
 import discourseComputed from "discourse-common/utils/decorators";
 import { emojiUnescape } from "discourse/lib/text";
-import { getOwner } from "discourse-common/lib/get-owner";
+import { getOwnerWithFallback } from "discourse-common/lib/get-owner";
 import { isEmpty } from "@ember/utils";
 import { longDate } from "discourse/lib/formatter";
 import { url } from "discourse/lib/computed";
@@ -36,18 +36,16 @@ import Evented from "@ember/object/evented";
 import { cancel } from "@ember/runloop";
 import discourseLater from "discourse-common/lib/later";
 import { isTesting } from "discourse-common/config/environment";
-import {
-  hideUserTip,
-  showNextUserTip,
-  showUserTip,
-} from "discourse/lib/user-tips";
 import { dependentKeyCompat } from "@ember/object/compat";
+import { inject as service } from "@ember/service";
 
 export const SECOND_FACTOR_METHODS = {
   TOTP: 1,
   BACKUP_CODE: 2,
   SECURITY_KEY: 3,
 };
+
+export const MAX_SECOND_FACTOR_NAME_LENGTH = 300;
 
 const TEXT_SIZE_COOKIE_NAME = "text_size";
 const COOKIE_EXPIRY_DAYS = 365;
@@ -172,6 +170,8 @@ function userOption(userOptionKey) {
 }
 
 const User = RestModel.extend({
+  userTips: service(),
+
   mailing_list_mode: userOption("mailing_list_mode"),
   external_links_in_new_tab: userOption("external_links_in_new_tab"),
   enable_quoting: userOption("enable_quoting"),
@@ -959,7 +959,7 @@ const User = RestModel.extend({
   },
 
   summary() {
-    const store = getOwner(this).lookup("service:store");
+    const store = getOwnerWithFallback(this).lookup("service:store");
 
     return ajax(userPath(`${this.username_lower}/summary.json`)).then(
       (json) => {
@@ -1170,72 +1170,6 @@ const User = RestModel.extend({
   trackedTags(trackedTags, watchedTags, watchingFirstPostTags) {
     return [...trackedTags, ...watchedTags, ...watchingFirstPostTags];
   },
-
-  canSeeUserTip(id) {
-    const userTips = Site.currentProp("user_tips");
-    if (!userTips || this.user_option?.skip_new_user_tips) {
-      return false;
-    }
-
-    if (!userTips[id]) {
-      if (!isTesting()) {
-        // eslint-disable-next-line no-console
-        console.warn("Cannot show user tip with type =", id);
-      }
-      return false;
-    }
-
-    const seenUserTips = this.user_option?.seen_popups || [];
-    if (seenUserTips.includes(-1) || seenUserTips.includes(userTips[id])) {
-      return false;
-    }
-
-    return true;
-  },
-
-  showUserTip(options) {
-    if (this.canSeeUserTip(options.id)) {
-      showUserTip({
-        ...options,
-        onDismiss: () => {
-          options.onDismiss?.();
-          this.hideUserTipForever(options.id);
-        },
-      });
-    }
-  },
-
-  hideUserTipForever(userTipId) {
-    const userTips = Site.currentProp("user_tips");
-    if (!userTips || this.user_option?.skip_new_user_tips) {
-      return;
-    }
-
-    // Empty userTipId means all user tips.
-    if (!userTips[userTipId]) {
-      // eslint-disable-next-line no-console
-      console.warn("Cannot hide user tip with type =", userTipId);
-      return;
-    }
-
-    // Hide user tips and maybe show the next one.
-    hideUserTip(userTipId, true);
-    showNextUserTip();
-
-    // Update list of seen user tips.
-    let seenUserTips = this.user_option?.seen_popups || [];
-    if (seenUserTips.includes(userTips[userTipId])) {
-      return;
-    }
-    seenUserTips.push(userTips[userTipId]);
-
-    // Save seen user tips on the server.
-    if (!this.user_option) {
-      this.set("user_option", {});
-    }
-    this.set("user_option.seen_popups", seenUserTips);
-    return this.save(["seen_popups"]);
-  },
 });
 
 User.reopenClass(Singleton, {
@@ -1265,7 +1199,7 @@ User.reopenClass(Singleton, {
         this._saveTimezone(userJson);
       }
 
-      const store = getOwner(this).lookup("service:store");
+      const store = getOwnerWithFallback(this).lookup("service:store");
       const currentUser = store.createRecord("user", userJson);
       currentUser.trackStatus();
       return currentUser;
@@ -1353,6 +1287,7 @@ User.reopenClass(Singleton, {
   create(args) {
     args = args || {};
     this.deleteStatusTrackingFields(args);
+
     return this._super(args);
   },
 
@@ -1382,7 +1317,7 @@ User.reopen(Evented, {
 
   // always call stopTrackingStatus() when done with a user
   trackStatus() {
-    if (!this.id) {
+    if (!this.id && !isTesting()) {
       // eslint-disable-next-line no-console
       console.warn(
         "It's impossible to track user status on a user model that doesn't have id. This user model won't be receiving live user status updates."

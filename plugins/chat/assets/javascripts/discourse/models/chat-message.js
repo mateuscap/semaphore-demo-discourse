@@ -4,9 +4,10 @@ import { TrackedArray, TrackedObject } from "@ember-compat/tracked-built-ins";
 import ChatMessageReaction from "discourse/plugins/chat/discourse/models/chat-message-reaction";
 import Bookmark from "discourse/models/bookmark";
 import I18n from "I18n";
-import { generateCookFunction } from "discourse/lib/text";
-import simpleCategoryHashMentionTransform from "discourse/plugins/chat/discourse/lib/simple-category-hash-mention-transform";
-import { getOwner } from "discourse-common/lib/get-owner";
+import { generateCookFunction, parseMentions } from "discourse/lib/text";
+import transformAutolinks from "discourse/plugins/chat/discourse/lib/transform-auto-links";
+import { getOwnerWithFallback } from "discourse-common/lib/get-owner";
+import discourseLater from "discourse-common/lib/later";
 
 export default class ChatMessage {
   static cookFunction = null;
@@ -27,7 +28,6 @@ export default class ChatMessage {
   @tracked staged;
   @tracked draftSaved;
   @tracked draft;
-  @tracked channelId;
   @tracked createdAt;
   @tracked uploads;
   @tracked excerpt;
@@ -49,17 +49,17 @@ export default class ChatMessage {
   @tracked highlighted;
   @tracked firstOfResults;
   @tracked message;
-  @tracked thread;
   @tracked manager;
-  @tracked threadTitle;
   @tracked deletedById;
 
   @tracked _deletedAt;
   @tracked _cooked;
+  @tracked _thread;
 
   constructor(channel, args = {}) {
-    // when modifying constructor, be sure to update duplicate function accordingly
     this.id = args.id;
+    this.channel = channel;
+    this.manager = args.manager;
     this.newest = args.newest || false;
     this.draftSaved = args.draftSaved || args.draft_saved || false;
     this.firstOfResults = args.firstOfResults || args.first_of_results || false;
@@ -69,7 +69,9 @@ export default class ChatMessage {
     this.availableFlags = args.availableFlags || args.available_flags;
     this.hidden = args.hidden || false;
     this.chatWebhookEvent = args.chatWebhookEvent || args.chat_webhook_event;
-    this.createdAt = args.createdAt || args.created_at;
+    this.createdAt = args.created_at
+      ? new Date(args.created_at)
+      : new Date(args.createdAt);
     this.deletedById = args.deletedById || args.deleted_by_id;
     this._deletedAt = args.deletedAt || args.deleted_at;
     this.expanded =
@@ -80,50 +82,24 @@ export default class ChatMessage {
     this.draft = args.draft;
     this.message = args.message || "";
     this._cooked = args.cooked || "";
-    this.thread = args.thread;
     this.inReplyTo =
       args.inReplyTo ||
       (args.in_reply_to || args.replyToMsg
         ? ChatMessage.create(channel, args.in_reply_to || args.replyToMsg)
         : null);
-    this.channel = channel;
     this.reactions = this.#initChatMessageReactionModel(args.reactions);
     this.uploads = new TrackedArray(args.uploads || []);
     this.user = this.#initUserModel(args.user);
     this.bookmark = args.bookmark ? Bookmark.create(args.bookmark) : null;
     this.mentionedUsers = this.#initMentionedUsers(args.mentioned_users);
+
+    if (args.thread) {
+      this.thread = args.thread;
+    }
   }
 
-  duplicate() {
-    // This is important as a message can exist in the context of a channel or a thread
-    // The current strategy is to have a different message object in each cases to avoid
-    // side effects
-    const message = new ChatMessage(this.channel, {
-      id: this.id,
-      newest: this.newest,
-      staged: this.staged,
-      edited: this.edited,
-      availableFlags: this.availableFlags,
-      hidden: this.hidden,
-      chatWebhookEvent: this.chatWebhookEvent,
-      createdAt: this.createdAt,
-      deletedAt: this.deletedAt,
-      excerpt: this.excerpt,
-      reviewableId: this.reviewableId,
-      userFlagStatus: this.userFlagStatus,
-      draft: this.draft,
-      message: this.message,
-      cooked: this.cooked,
-    });
-
-    message.thread = this.thread;
-    message.reactions = this.reactions;
-    message.user = this.user;
-    message.inReplyTo = this.inReplyTo;
-    message.bookmark = this.bookmark;
-    message.uploads = this.uploads;
-
-    return message;
+  get persisted() {
+    return !!this.id && !this.staged;
   }
 
   get replyable() {
@@ -132,6 +108,16 @@ export default class ChatMessage {
 
   get editable() {
     return !this.staged && !this.error;
+  }
+
+  get thread() {
+    return this._thread;
+  }
+
+  set thread(thread) {
+    this._thread = this.channel.threadsManager.add(this.channel, thread, {
+      replace: true,
+    });
   }
 
   get deletedAt() {
@@ -158,57 +144,31 @@ export default class ChatMessage {
   }
 
   async cook() {
-    const site = getOwner(this).lookup("service:site");
-
     if (this.isDestroyed || this.isDestroying) {
       return;
     }
-
-    const markdownOptions = {
-      featuresOverride:
-        site.markdown_additional_options?.chat?.limited_pretty_text_features,
-      markdownItRules:
-        site.markdown_additional_options?.chat
-          ?.limited_pretty_text_markdown_rules,
-      hashtagTypesInPriorityOrder:
-        site.hashtag_configurations?.["chat-composer"],
-      hashtagIcons: site.hashtag_icons,
-    };
-
-    if (ChatMessage.cookFunction) {
-      this.cooked = ChatMessage.cookFunction(this.message);
-    } else {
-      const cookFunction = await generateCookFunction(markdownOptions);
-      ChatMessage.cookFunction = (raw) => {
-        return simpleCategoryHashMentionTransform(
-          cookFunction(raw),
-          site.categories
-        );
-      };
-
-      this.cooked = ChatMessage.cookFunction(this.message);
-    }
+    await this.#ensureCookFunctionInitialized();
+    this.cooked = ChatMessage.cookFunction(this.message);
   }
 
   get read() {
     return this.channel.currentUserMembership?.lastReadMessageId >= this.id;
   }
 
+  @cached
   get firstMessageOfTheDayAt() {
     if (!this.previousMessage) {
       return this.#startOfDay(this.createdAt);
     }
 
     if (
-      !this.#areDatesOnSameDay(
-        new Date(this.previousMessage.createdAt),
-        new Date(this.createdAt)
-      )
+      !this.#areDatesOnSameDay(this.previousMessage.createdAt, this.createdAt)
     ) {
       return this.#startOfDay(this.createdAt);
     }
   }
 
+  @cached
   get formattedFirstMessageDate() {
     if (this.firstMessageOfTheDayAt) {
       return this.#calendarDate(this.firstMessageOfTheDayAt);
@@ -239,8 +199,24 @@ export default class ChatMessage {
     return this.manager?.messages?.objectAt?.(this.index + 1);
   }
 
+  highlight() {
+    this.highlighted = true;
+
+    discourseLater(() => {
+      if (this.isDestroying || this.isDestroyed) {
+        return;
+      }
+
+      this.highlighted = false;
+    }, 2000);
+  }
+
   incrementVersion() {
     this.version++;
+  }
+
+  async parseMentions() {
+    return await parseMentions(this.message, this.#markdownOptions);
   }
 
   toJSONDraft() {
@@ -339,6 +315,31 @@ export default class ChatMessage {
         );
       }
     }
+  }
+
+  async #ensureCookFunctionInitialized() {
+    if (ChatMessage.cookFunction) {
+      return;
+    }
+
+    const cookFunction = await generateCookFunction(this.#markdownOptions);
+    ChatMessage.cookFunction = (raw) => {
+      return transformAutolinks(cookFunction(raw));
+    };
+  }
+
+  get #markdownOptions() {
+    const site = getOwnerWithFallback(this).lookup("service:site");
+    return {
+      featuresOverride:
+        site.markdown_additional_options?.chat?.limited_pretty_text_features,
+      markdownItRules:
+        site.markdown_additional_options?.chat
+          ?.limited_pretty_text_markdown_rules,
+      hashtagTypesInPriorityOrder:
+        site.hashtag_configurations?.["chat-composer"],
+      hashtagIcons: site.hashtag_icons,
+    };
   }
 
   #initChatMessageReactionModel(reactions = []) {

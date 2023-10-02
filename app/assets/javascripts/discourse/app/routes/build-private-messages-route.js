@@ -24,12 +24,6 @@ export default (inboxType, path, filter) => {
       ];
     },
 
-    @action
-    didTransition() {
-      this.controllerFor("user-topics-list")._showFooter();
-      return true;
-    },
-
     model() {
       const topicListFilter =
         "topics/" + path + "/" + this.modelFor("user").get("username_lower");
@@ -66,12 +60,12 @@ export default (inboxType, path, filter) => {
         hideCategory: true,
         showPosters: true,
         tagsForUser: this.modelFor("user").get("username_lower"),
-        selected: [],
         showToggleBulkSelect: true,
         filter,
         group: null,
         inbox: inboxType,
       });
+      userTopicsListController.bulkSelectHelper.clear();
 
       userTopicsListController.subscribe();
 

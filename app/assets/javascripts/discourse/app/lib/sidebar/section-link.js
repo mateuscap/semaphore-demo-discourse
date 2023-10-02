@@ -2,6 +2,7 @@ import { tracked } from "@glimmer/tracking";
 import { bind } from "discourse-common/utils/decorators";
 import RouteInfoHelper from "discourse/lib/sidebar/route-info-helper";
 import discourseLater from "discourse-common/lib/later";
+import { defaultHomepage } from "discourse/lib/utilities";
 
 const TOUCH_SCREEN_DELAY = 300;
 const MOUSE_DELAY = 250;
@@ -22,10 +23,17 @@ export default class SectionLink {
     this.text = name;
     this.value = value;
     this.section = section;
+    this.withAnchor = value.match(/#\w+$/gi);
 
     if (!this.externalOrFullReload) {
       const routeInfoHelper = new RouteInfoHelper(router, value);
-      this.route = routeInfoHelper.route;
+
+      if (routeInfoHelper.route === "discovery.index") {
+        this.route = `discovery.${defaultHomepage()}`;
+      } else {
+        this.route = routeInfoHelper.route;
+      }
+
       this.models = routeInfoHelper.models;
       this.query = routeInfoHelper.query;
     }
@@ -36,7 +44,7 @@ export default class SectionLink {
   }
 
   get externalOrFullReload() {
-    return this.external || this.fullReload;
+    return this.external || this.fullReload || this.withAnchor;
   }
 
   @bind
@@ -82,10 +90,24 @@ export default class SectionLink {
 
   @bind
   dragMove(event) {
-    this.startMouseY = this.#calcMouseY(event);
+    const moveMouseY = this.#calcMouseY(event);
 
-    event.stopPropagation();
-    event.preventDefault();
+    if (this.willDrag && moveMouseY !== this.startMouseY && !this.drag) {
+      /**
+       * If mouse position is different, it means that it is a scroll and not drag and drop action.
+       * In that case, we want to do nothing and keep original behaviour.
+       */
+      this.willDrag = false;
+      return;
+    } else {
+      /**
+       * Otherwise, event propagation should be stopped as we have our own handler for drag and drop.
+       */
+      event.stopPropagation();
+      event.preventDefault();
+    }
+
+    this.startMouseY = moveMouseY;
 
     if (!this.drag) {
       return;

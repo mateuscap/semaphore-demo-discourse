@@ -6,11 +6,13 @@ module Chat
 
     def threads
       object.threads.map do |thread|
-        Chat::ThreadSerializer.new(
+        ::Chat::ThreadSerializer.new(
           thread,
           scope: scope,
           membership: object.memberships.find { |m| m.thread_id == thread.id },
-          include_preview: true,
+          include_thread_preview: true,
+          include_thread_original_message: true,
+          participants: object.threads_participants[thread.id],
           root: nil,
         )
       end

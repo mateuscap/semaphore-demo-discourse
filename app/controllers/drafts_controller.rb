@@ -5,11 +5,17 @@ class DraftsController < ApplicationController
 
   skip_before_action :check_xhr, :preload_json
 
+  INDEX_LIMIT = 50
+
   def index
     params.permit(:offset)
-    params.permit(:limit)
 
-    stream = Draft.stream(user: current_user, offset: params[:offset], limit: params[:limit])
+    stream =
+      Draft.stream(
+        user: current_user,
+        offset: params[:offset],
+        limit: fetch_limit_from_params(default: nil, max: INDEX_LIMIT),
+      )
 
     render json: { drafts: stream ? serialize_data(stream, DraftSerializer) : [] }
   end
@@ -32,6 +38,19 @@ class DraftsController < ApplicationController
       data = JSON.parse(params[:data])
     rescue JSON::ParserError
       raise Discourse::InvalidParameters.new(:data)
+    end
+
+    if reached_max_drafts_per_user?(params)
+      render_json_error I18n.t("draft.too_many_drafts.title"),
+                        status: 403,
+                        extras: {
+                          description:
+                            I18n.t(
+                              "draft.too_many_drafts.description",
+                              base_url: Discourse.base_url,
+                            ),
+                        }
+      return
     end
 
     sequence =
@@ -108,5 +127,14 @@ class DraftsController < ApplicationController
     end
 
     render json: success_json
+  end
+
+  private
+
+  def reached_max_drafts_per_user?(params)
+    user_id = current_user.id
+
+    Draft.where(user_id: user_id).count >= SiteSetting.max_drafts_per_user &&
+      !Draft.exists?(user_id: user_id, draft_key: params[:draft_key])
   end
 end
