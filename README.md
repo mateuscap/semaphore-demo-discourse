@@ -1,6 +1,7 @@
 <a href="https://www.discourse.org/">
   <img src="images/discourse-readme-logo.png" width="300px">
 </a>
+.
 
 Discourse is the online home for your community. We offer a 100% open source community platform to those who want complete control over how and where their site is run.
 
